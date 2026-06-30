@@ -1,12 +1,12 @@
 # myoga
 
-Local, browser-only visualization of parsnp outbreak datasets.
+Local, browser-only visualization of [parsnp](https://github.com/marbl/parsnp) outbreak datasets.
 
 `myoga` loads three local files:
 
 - `parsnp.ggr`
 - `parsnp.tree`
-- a metadata table for the genomes in the Parsnp run
+- a metadata table for the genomes in the parsnp run
 
 The app keeps those files in your browser memory and does not upload genomic or
 metadata content anywhere. It is intended for case-by-case confidential outbreak
