@@ -1,6 +1,6 @@
 # myoga
 
-Local, browser-only visualization of Parsnp/Gingr outbreak datasets.
+Local, browser-only visualization of parsnp outbreak datasets.
 
 `myoga` loads three local files:
 
@@ -65,17 +65,17 @@ Alaska, Hawaii, or Puerto Rico.
 Release binaries are built with Go and embed the static app assets:
 
 ```bash
-scripts/build-release.sh v0.1.0
+scripts/build-release.sh v0.1.1
 ```
 
 The script writes ignored release folders under `dist/`:
 
-- `myoga-v0.1.0-windows-amd64/myoga.exe`
-- `myoga-v0.1.0-windows-arm64/myoga.exe`
-- `myoga-v0.1.0-linux-amd64/myoga`
-- `myoga-v0.1.0-linux-arm64/myoga`
-- `myoga-v0.1.0-darwin-amd64/myoga`
-- `myoga-v0.1.0-darwin-arm64/myoga`
+- `myoga-v0.1.1-windows-amd64/myoga.exe`
+- `myoga-v0.1.1-windows-arm64/myoga.exe`
+- `myoga-v0.1.1-linux-amd64/myoga`
+- `myoga-v0.1.1-linux-arm64/myoga`
+- `myoga-v0.1.1-darwin-amd64/myoga`
+- `myoga-v0.1.1-darwin-arm64/myoga`
 
 The binaries are self-contained. They do not require Python, Node, or command
 line use by the end user.
@@ -102,7 +102,7 @@ the location/country column.
 
 - `parsnp.tree` is the authoritative source for phylogenetic labels.
 - `parsnp.ggr` is read locally and used to cross-check genome names that can be
-  extracted from the Gingr project file.
+  extracted from the parsnp/gingr project file.
 - The detailed world map/globe uses the bundled Natural Earth 50m countries
   GeoJSON under `assets/`, so no map tiles or metadata are requested from remote
   servers during use. If the HTML is opened directly from disk and the browser
