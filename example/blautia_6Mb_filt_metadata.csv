@@ -1,0 +1,19 @@
+genome_id,accession,collection_date,country,location,latitude,longitude,host,sample_type,isolation_source,lineage,outbreak_cluster,facility,notes
+GCF_014287615.1_ASM1428761v1_genomic.fna,GCF_014287615.1,2026-01-04,United States,United States: Boston MA,42.3601,-71.0589,human,clinical,stool,L1,Cluster-A,North ward,synthetic metadata row for local myoga example
+GCF_048356555.1_ASM4835655v1_genomic.fna,GCF_048356555.1,2026-01-07,Canada,Canada: Montreal QC,45.5019,-73.5674,human,clinical,stool,L2,Cluster-C,Referral lab,synthetic metadata row for local myoga example
+GCF_042848975.1_ASM4284897v1_genomic.fna,GCF_042848975.1,2026-01-08,United Kingdom,United Kingdom: London,51.5072,-0.1276,human,clinical,stool,L2,Cluster-C,Travel screen,synthetic metadata row for local myoga example
+GCF_024462695.1_ASM2446269v1_genomic.fna,GCF_024462695.1,2026-01-09,France,France: Paris,48.8566,2.3522,human,clinical,stool,L2,Cluster-C,Travel screen,synthetic metadata row for local myoga example
+GCF_037000545.1_ASM3700054v1_genomic.fna,GCF_037000545.1,2026-01-11,Germany,Germany: Berlin,52.5200,13.4050,human,clinical,stool,L2,Cluster-C,Regional clinic,synthetic metadata row for local myoga example
+edge_48455.fna,edge_48455,2026-01-13,United States,United States: New York NY,40.7128,-74.0060,human,clinical,stool,L1,Cluster-A,Index hospital,synthetic local assembly from Parsnp input
+GCF_022867815.1_ASM2286781v1_genomic.fna,GCF_022867815.1,2026-01-14,United States,United States: Philadelphia PA,39.9526,-75.1652,human,clinical,stool,L1,Cluster-A,Index hospital,synthetic metadata row for local myoga example
+GCF_046957695.1_ASM4695769v1_genomic.fna,GCF_046957695.1,2026-01-15,United States,United States: Baltimore MD,39.2904,-76.6122,human,clinical,stool,L1,Cluster-A,Index hospital,synthetic metadata row for local myoga example
+GCF_042852025.1_ASM4285202v1_genomic.fna,GCF_042852025.1,2026-01-17,Netherlands,Netherlands: Amsterdam,52.3676,4.9041,human,clinical,stool,L3,Cluster-D,Reference lab,synthetic metadata row for local myoga example
+GCF_008679745.1_ASM867974v1_genomic.fna,GCF_008679745.1,2026-01-18,Spain,Spain: Madrid,40.4168,-3.7038,human,clinical,stool,L3,Cluster-D,Reference lab,synthetic metadata row for local myoga example
+GCF_037890095.1_ASM3789009v1_genomic.fna,GCF_037890095.1,2026-01-19,Italy,Italy: Milan,45.4642,9.1900,human,clinical,stool,L3,Cluster-D,Reference lab,synthetic metadata row for local myoga example
+GCF_020215665.1_ASM2021566v1_genomic.fna,GCF_020215665.1,2026-01-21,Japan,Japan: Tokyo,35.6762,139.6503,human,clinical,stool,L4,Cluster-B,Children hospital,synthetic metadata row for local myoga example
+GCF_020509505.1_ASM2050950v1_genomic.fna,GCF_020509505.1,2026-01-22,Republic of Korea,Republic of Korea: Seoul,37.5665,126.9780,human,clinical,stool,L4,Cluster-B,Children hospital,synthetic metadata row for local myoga example
+GCF_003478165.1_ASM347816v1_genomic.fna,GCF_003478165.1,2026-01-23,China,China: Shanghai,31.2304,121.4737,human,clinical,stool,L4,Cluster-B,Children hospital,synthetic metadata row for local myoga example
+GCF_022900195.1_ASM2290019v1_genomic.fna,GCF_022900195.1,2026-01-25,Australia,Australia: Sydney,-33.8688,151.2093,human,clinical,stool,L5,Cluster-E,Public health lab,synthetic metadata row for local myoga example
+GCF_022900055.1_ASM2290005v1_genomic.fna,GCF_022900055.1,2026-01-26,New Zealand,New Zealand: Auckland,-36.8509,174.7645,human,clinical,stool,L5,Cluster-E,Public health lab,synthetic metadata row for local myoga example
+GCF_023656705.1_ASM2365670v1_genomic.fna,GCF_023656705.1,2026-01-28,Brazil,Brazil: Sao Paulo,-23.5558,-46.6396,human,clinical,stool,L6,Cluster-F,Sentinel site,synthetic metadata row for local myoga example
+GCF_014287615.1_ASM1428761v1_genomic.fna.ref,GCF_014287615.1,2025-12-15,United States,United States: Atlanta GA,33.7490,-84.3880,reference,reference,reference,L1,Reference,Reference set,synthetic reference row for local myoga example

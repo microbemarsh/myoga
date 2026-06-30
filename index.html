@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>myoga</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <strong>myoga</strong>
+          <span>local parsnp outbreak map</span>
+        </div>
+        <label class="file-picker">
+          <span>GGR</span>
+          <input id="ggrFile" type="file" accept=".ggr,.gingr,*/*">
+        </label>
+        <label class="file-picker">
+          <span>Tree</span>
+          <input id="treeFile" type="file" accept=".tree,.nwk,.newick,.txt,*/*">
+        </label>
+        <label class="file-picker">
+          <span>Metadata</span>
+          <input id="metadataFile" type="file" accept=".csv,.tsv,.txt">
+        </label>
+        <label class="file-picker">
+          <span>GeoJSON</span>
+          <input id="geojsonFile" type="file" accept=".geojson,.json,application/geo+json,application/json">
+        </label>
+        <button id="loadExample" type="button" title="Load a tiny built-in example">Example</button>
+      </header>
+
+      <aside class="controls-panel">
+        <button id="toggleControls" class="panel-toggle panel-toggle-left" type="button" title="Hide controls">‹</button>
+        <section>
+          <h2>Inputs</h2>
+          <dl class="stats-list">
+            <div><dt>Tree tips</dt><dd id="treeCount">0</dd></div>
+            <div><dt>Metadata rows</dt><dd id="metadataCount">0</dd></div>
+            <div><dt>Mapped</dt><dd id="mappedCount">0</dd></div>
+            <div><dt>Unmatched</dt><dd id="unmatchedCount">0</dd></div>
+          </dl>
+        </section>
+
+        <section>
+          <h2>Columns</h2>
+          <label>ID<select id="idColumn"></select></label>
+          <label>Latitude<select id="latColumn"></select></label>
+          <label>Longitude<select id="lonColumn"></select></label>
+          <label>Lat/Lon<select id="latLonColumn"></select></label>
+          <label>Location<select id="locationColumn"></select></label>
+          <label>Date<select id="dateColumn"></select></label>
+          <label>Color<select id="colorColumn"></select></label>
+        </section>
+
+        <section>
+          <h2>View</h2>
+          <label>Search<input id="searchBox" type="search" placeholder="genome, place, host, etc."></label>
+          <label>Filter column<select id="filterColumn"></select></label>
+          <label>Filter value<select id="filterValue"></select></label>
+          <label class="checkline"><input id="mappedOnly" type="checkbox">Mapped only</label>
+          <div class="button-row">
+            <button id="exportGeojson" type="button">GeoJSON</button>
+            <button id="exportSession" type="button">Session JSON</button>
+          </div>
+        </section>
+
+        <p id="statusText" class="status-text">Load local files to begin.</p>
+      </aside>
+
+      <section class="map-panel" aria-label="Genome map">
+        <div class="map-toolbar">
+          <strong id="mapTitle">Planetary view</strong>
+          <div class="map-buttons" role="group" aria-label="Map controls">
+            <button id="globeView" type="button">Globe</button>
+            <button id="flatView" type="button">Flat</button>
+            <button id="usCountiesMap" type="button">US Counties</button>
+            <button id="zoomOut" type="button" title="Zoom out">-</button>
+            <button id="zoomIn" type="button" title="Zoom in">+</button>
+            <button id="resetMap" type="button">Reset</button>
+            <span id="privacyBadge">offline basemap</span>
+          </div>
+        </div>
+        <svg id="mapSvg" viewBox="0 0 1000 500" role="img" aria-label="World map with genome locations"></svg>
+      </section>
+
+      <section class="tree-panel" aria-label="Parsnp tree">
+        <header>
+          <strong>parsnp tree</strong>
+          <span id="treeStatus">waiting for Newick</span>
+          <button id="toggleTree" class="panel-toggle panel-toggle-tree" type="button" title="Hide tree">⌄</button>
+        </header>
+        <svg id="treeSvg" role="img" aria-label="Phylogenetic tree"></svg>
+      </section>
+
+      <aside class="detail-panel" aria-label="Selected genome metadata">
+        <button id="toggleDetails" class="panel-toggle panel-toggle-right" type="button" title="Hide metadata">›</button>
+        <button id="closeDetail" type="button" title="Close">x</button>
+        <div id="detailEmpty" class="empty-detail">Select a map point or tree label.</div>
+        <div id="detailContent" hidden>
+          <p class="eyebrow" id="detailSource">GENOME</p>
+          <h1 id="detailTitle"></h1>
+          <p id="detailSubtitle"></p>
+          <dl id="detailBasics" class="detail-basics"></dl>
+          <h2>Metadata</h2>
+          <div id="metadataTable" class="metadata-table"></div>
+        </div>
+      </aside>
+    </main>
+    <script src="src/myoga.js" defer></script>
+  </body>
+</html>
