@@ -13,7 +13,20 @@ metadata content anywhere. It is intended for case-by-case confidential outbreak
 review where a Microreact-like geographic/tree/metadata view is useful, but data
 should remain on the local machine.
 
-## Use
+## Use A Release Executable
+
+For non-technical users, use a packaged `myoga` executable for their operating
+system:
+
+- Windows: double-click `myoga.exe`
+- macOS/Linux: double-click or open `myoga`
+
+The executable starts a local-only server on `127.0.0.1`, opens the default
+browser, and serves the bundled app, maps, and example files from inside the
+binary. Genomic files and metadata selected in the browser stay on the local
+machine. Close the launcher window to stop myoga.
+
+## Use From Source
 
 Open [index.html](./index.html) in a browser, or serve the directory locally:
 
@@ -42,6 +55,26 @@ The `US Counties` map button loads a bundled county-level United States GeoJSON
 for finer local outbreak views without selecting a file. It opens fitted to the
 continental United States for a useful working zoom; pan or zoom out to inspect
 Alaska, Hawaii, or Puerto Rico.
+
+## Build Release Executables
+
+Release binaries are built with Go and embed the static app assets:
+
+```bash
+scripts/build-release.sh v0.1.0
+```
+
+The script writes ignored release folders under `dist/`:
+
+- `myoga-v0.1.0-windows-amd64/myoga.exe`
+- `myoga-v0.1.0-windows-arm64/myoga.exe`
+- `myoga-v0.1.0-linux-amd64/myoga`
+- `myoga-v0.1.0-linux-arm64/myoga`
+- `myoga-v0.1.0-darwin-amd64/myoga`
+- `myoga-v0.1.0-darwin-arm64/myoga`
+
+The binaries are self-contained. They do not require Python, Node, or command
+line use by the end user.
 
 ## Metadata
 
