@@ -438,7 +438,7 @@ input[type="search"] {
   grid-template-rows: 34px 0;
 }
 
-.app-shell.tree-collapsed #treeSvg {
+.app-shell.tree-collapsed .tree-scroll {
   display: none;
 }
 
@@ -455,16 +455,47 @@ input[type="search"] {
   margin-left: auto;
 }
 
-#treeSvg {
+.tree-action {
+  height: 24px;
+  padding: 0 8px;
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font: 9px ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+.tree-action:hover {
+  color: var(--green);
+}
+
+.tree-scroll {
   width: 100%;
   height: 100%;
+  min-height: 0;
   overflow: auto;
   background: #070b0a;
+  cursor: grab;
+}
+
+.tree-scroll.dragging {
+  cursor: grabbing;
+}
+
+#treeSvg {
+  display: block;
+  min-width: 100%;
+  min-height: 100%;
 }
 
 .tree-edge {
   fill: none;
   stroke: rgba(222, 236, 225, 0.34);
+  stroke-width: 1;
+}
+
+.tree-label-guide {
+  stroke: rgba(213, 229, 218, 0.1);
   stroke-width: 1;
 }
 

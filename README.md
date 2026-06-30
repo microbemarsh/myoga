@@ -46,6 +46,10 @@ globe to rotate it, scroll or use the `+`/`-` buttons to zoom, use `Reset` to
 return to the default view, and switch to `Flat` when a panning equirectangular
 overview is easier. Use the small edge controls on the left panel, right
 metadata panel, and tree panel to collapse them when you want more map space.
+Large phylogenomic trees can be scrolled with the trackpad/mouse wheel or
+dragged inside the tree panel to pan across long labels and many tips.
+Use `Midpoint root` to redraw the tree around its longest leaf-to-leaf midpoint,
+or `Original root` to return to the input Newick rooting.
 
 Use the `GeoJSON` file input to load a custom local outbreak geography layer.
 Custom GeoJSON is rendered only in `Flat` mode, automatically switches the map

@@ -89,10 +89,14 @@
       <section class="tree-panel" aria-label="Parsnp tree">
         <header>
           <strong>parsnp tree</strong>
+          <button id="midpointRootTree" class="tree-action" type="button">Midpoint root</button>
+          <button id="originalRootTree" class="tree-action" type="button">Original root</button>
           <span id="treeStatus">waiting for Newick</span>
           <button id="toggleTree" class="panel-toggle panel-toggle-tree" type="button" title="Hide tree">⌄</button>
         </header>
-        <svg id="treeSvg" role="img" aria-label="Phylogenetic tree"></svg>
+        <div id="treeScroll" class="tree-scroll">
+          <svg id="treeSvg" role="img" aria-label="Phylogenetic tree"></svg>
+        </div>
       </section>
 
       <aside class="detail-panel" aria-label="Selected genome metadata">

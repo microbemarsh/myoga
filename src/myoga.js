@@ -84,7 +84,8 @@
     controlsCollapsed: false,
     detailsCollapsed: false,
     treeCollapsed: false,
-    drag: null
+    drag: null,
+    treeDrag: null
   };
 
   const el = {
@@ -120,8 +121,11 @@
     statusText: byId("statusText"),
     mapTitle: byId("mapTitle"),
     mapSvg: byId("mapSvg"),
+    treeScroll: byId("treeScroll"),
     treeSvg: byId("treeSvg"),
     treeStatus: byId("treeStatus"),
+    midpointRootTree: byId("midpointRootTree"),
+    originalRootTree: byId("originalRootTree"),
     toggleControls: byId("toggleControls"),
     toggleDetails: byId("toggleDetails"),
     toggleTree: byId("toggleTree"),
@@ -192,6 +196,12 @@
     el.toggleControls.addEventListener("click", () => togglePanel("controls"));
     el.toggleDetails.addEventListener("click", () => togglePanel("details"));
     el.toggleTree.addEventListener("click", () => togglePanel("tree"));
+    el.treeScroll.addEventListener("pointerdown", startTreeDrag);
+    el.treeScroll.addEventListener("pointermove", moveTreeDrag);
+    el.treeScroll.addEventListener("pointerup", endTreeDrag);
+    el.treeScroll.addEventListener("pointercancel", endTreeDrag);
+    el.midpointRootTree.addEventListener("click", midpointRootLoadedTree);
+    el.originalRootTree.addEventListener("click", restoreOriginalTreeRoot);
   }
 
   function togglePanel(panel) {
@@ -280,6 +290,32 @@
   function clickMap(event) {
     const genomeId = event.target?.dataset?.genomeId;
     if (genomeId) selectGenome(genomeId);
+  }
+
+  function startTreeDrag(event) {
+    if (event.button !== undefined && event.button !== 0) return;
+    state.treeDrag = {
+      x: event.clientX,
+      y: event.clientY,
+      left: el.treeScroll.scrollLeft,
+      top: el.treeScroll.scrollTop
+    };
+    el.treeScroll.setPointerCapture?.(event.pointerId);
+    el.treeScroll.classList.add("dragging");
+  }
+
+  function moveTreeDrag(event) {
+    if (!state.treeDrag) return;
+    event.preventDefault();
+    el.treeScroll.scrollLeft = state.treeDrag.left - (event.clientX - state.treeDrag.x);
+    el.treeScroll.scrollTop = state.treeDrag.top - (event.clientY - state.treeDrag.y);
+  }
+
+  function endTreeDrag(event) {
+    if (!state.treeDrag) return;
+    state.treeDrag = null;
+    el.treeScroll.releasePointerCapture?.(event.pointerId);
+    el.treeScroll.classList.remove("dragging");
   }
 
   async function loadWorldMap() {
@@ -372,6 +408,30 @@
     }
   }
 
+  function midpointRootLoadedTree() {
+    if (!state.treeText.trim()) {
+      setStatus("Load parsnp.tree before midpoint rooting.");
+      return;
+    }
+    try {
+      state.treeRoot = midpointRootTree(parseNewick(state.treeText.trim()));
+      state.treeTips = flattenTips(state.treeRoot);
+      reconcile();
+      setStatus(`Midpoint-rooted tree with ${state.treeTips.length} tips.`);
+    } catch (error) {
+      setStatus(`Midpoint rooting failed: ${error.message}`);
+    }
+  }
+
+  function restoreOriginalTreeRoot() {
+    if (!state.treeText.trim()) {
+      setStatus("Load parsnp.tree before restoring the original root.");
+      return;
+    }
+    loadTreeText(state.treeText);
+    setStatus("Restored original tree root.");
+  }
+
   function loadMetadataText(text) {
     try {
       state.metadata = parseTable(text);
@@ -387,9 +447,9 @@
   async function loadExample() {
     try {
       const [ggrResponse, treeResponse, metadataResponse] = await Promise.all([
-        fetch("example/blautia_6Mb_filt_parsnp.ggr"),
-        fetch("example/blautia_6Mb_filt_parsnp.tree"),
-        fetch("example/blautia_6Mb_filt_metadata.csv")
+        fetch("example/mers49/parsnp.ggr"),
+        fetch("example/mers49/parsnp.tree"),
+        fetch("example/mers49/metadata.csv")
       ]);
       if (!ggrResponse.ok || !treeResponse.ok || !metadataResponse.ok) throw new Error("repo example files unavailable");
       state.ggrIds = extractGgrIds(new Uint8Array(await ggrResponse.arrayBuffer()));
@@ -811,12 +871,20 @@
     const rowHeight = 22;
     const left = 18;
     const top = 18;
-    const width = Math.max(520, el.treeSvg.clientWidth || 720);
+    const maxLabelLength = leaves.reduce((length, leaf) => Math.max(length, cleanLabel(leaf.name).length), 0);
+    const visibleWidth = el.treeScroll.clientWidth || el.treeSvg.clientWidth || 720;
+    const labelWidth = Math.min(620, Math.max(180, maxLabelLength * 6.6));
+    const treeWidth = Math.max(visibleWidth * 1.45, 980, Math.min(2600, leaves.length * 32));
+    const width = Math.max(visibleWidth, left + treeWidth + labelWidth + 50);
     const height = Math.max(120, leaves.length * rowHeight + top * 2);
     el.treeSvg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    el.treeSvg.setAttribute("width", String(width));
+    el.treeSvg.setAttribute("height", String(height));
+    el.treeSvg.style.width = `${width}px`;
     el.treeSvg.style.minHeight = `${height}px`;
 
-    assignTreeCoordinates(state.treeRoot, leaves, left, width - 210, top, rowHeight);
+    assignTreeCoordinates(state.treeRoot, leaves, left, left + treeWidth, top, rowHeight);
+    el.treeSvg.append(svg("line", { x1: left + treeWidth + 6, y1: 0, x2: left + treeWidth + 6, y2: height, class: "tree-label-guide" }));
     for (const node of walkTree(state.treeRoot)) {
       if (!node.children.length) continue;
       for (const child of node.children) {
@@ -1043,7 +1111,8 @@
     const max = Math.max(...totals.map((item) => item.total), 1);
     leaves.forEach((leaf, index) => { leaf.y = top + index * rowHeight; });
     for (const item of totals) {
-      item.node.x = left + (item.total / max) * (right - left);
+      const fraction = item.total <= 0 ? 0 : Math.pow(item.total / max, 0.58);
+      item.node.x = left + fraction * (right - left);
     }
     function setInternalY(node) {
       if (!node.children.length) return node.y;
@@ -1056,12 +1125,111 @@
   function cumulativeLengths(root) {
     const result = [];
     function visit(node, total, depth) {
-      const next = total + (node.length || (node.parent ? 1 : 0));
+      const next = total + (node.parent ? branchLength(node) : 0);
       result.push({ node, total: next || depth });
       for (const child of node.children) visit(child, next, depth + 1);
     }
     visit(root, 0, 0);
     return result;
+  }
+
+  function midpointRootTree(root) {
+    const graph = treeGraph(root);
+    const leaves = Array.from(graph.keys()).filter((node) => !node.children.length);
+    if (leaves.length < 2) return root;
+
+    let best = { start: leaves[0], end: leaves[0], distance: -1, previous: new Map() };
+    for (const leaf of leaves) {
+      const search = graphDistances(graph, leaf);
+      for (const other of leaves) {
+        const distance = search.distances.get(other);
+        if (other !== leaf && distance > best.distance) {
+          best = { start: leaf, end: other, distance, previous: search.previous };
+        }
+      }
+    }
+    if (!(best.distance > 0)) return root;
+
+    const path = pathBetween(best.start, best.end, best.previous);
+    const midpoint = best.distance / 2;
+    let walked = 0;
+    for (let index = 0; index < path.length - 1; index += 1) {
+      const a = path[index];
+      const b = path[index + 1];
+      const edge = edgeLength(graph, a, b);
+      if (walked + edge >= midpoint) {
+        const fromA = midpoint - walked;
+        const fromB = edge - fromA;
+        return buildRootedFromMidpoint(graph, a, b, fromA, fromB);
+      }
+      walked += edge;
+    }
+    return root;
+  }
+
+  function treeGraph(root) {
+    const graph = new Map();
+    for (const node of walkTree(root)) graph.set(node, []);
+    for (const node of walkTree(root)) {
+      for (const child of node.children) {
+        const length = branchLength(child);
+        graph.get(node).push({ node: child, length });
+        graph.get(child).push({ node, length });
+      }
+    }
+    return graph;
+  }
+
+  function graphDistances(graph, start) {
+    const distances = new Map([[start, 0]]);
+    const previous = new Map();
+    const stack = [start];
+    while (stack.length) {
+      const node = stack.pop();
+      for (const edge of graph.get(node) || []) {
+        if (distances.has(edge.node)) continue;
+        distances.set(edge.node, distances.get(node) + edge.length);
+        previous.set(edge.node, node);
+        stack.push(edge.node);
+      }
+    }
+    return { distances, previous };
+  }
+
+  function pathBetween(start, end, previous) {
+    const path = [end];
+    let current = end;
+    while (current !== start && previous.has(current)) {
+      current = previous.get(current);
+      path.push(current);
+    }
+    return path.reverse();
+  }
+
+  function buildRootedFromMidpoint(graph, a, b, fromA, fromB) {
+    const root = { name: "midpoint_root", length: 0, children: [], parent: null, x: 0, y: 0 };
+    const left = cloneDirectedTree(graph, a, b, Math.max(0, fromA), root);
+    const right = cloneDirectedTree(graph, b, a, Math.max(0, fromB), root);
+    root.children = [left, right].filter(Boolean);
+    return root;
+  }
+
+  function cloneDirectedTree(graph, node, blocked, length, parent) {
+    const clone = { name: node.name, length, children: [], parent, x: 0, y: 0 };
+    for (const edge of graph.get(node) || []) {
+      if (edge.node === blocked) continue;
+      clone.children.push(cloneDirectedTree(graph, edge.node, node, edge.length, clone));
+    }
+    return clone;
+  }
+
+  function edgeLength(graph, a, b) {
+    return (graph.get(a) || []).find((edge) => edge.node === b)?.length || 0;
+  }
+
+  function branchLength(node) {
+    const length = Number(node.length);
+    return Number.isFinite(length) && length > 0 ? length : 0.000001;
   }
 
   function extractGgrIds(bytes) {
