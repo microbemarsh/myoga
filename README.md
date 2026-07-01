@@ -1,113 +1,110 @@
 # myoga
 
-Local, browser-only visualization of [parsnp](https://github.com/marbl/parsnp) outbreak datasets.
+**Map Your Own Genomics Atlas**
 
-`myoga` loads three local files:
+**myoga** is a local-first tool for geographically visualizing [parsnp](https://github.com/marbl/parsnp) outbreak datasets.
+
+It lets users explore phylogenomic trees, sample metadata, and geographic locations in a Microreact-like interface while keeping genomic and metadata files on their own machine.
+
+---
+<img width="1900" height="942" alt="image" src="https://github.com/user-attachments/assets/3fbc8e82-ee16-4ccc-aea7-f0081b997537" />
+
+---
+
+## Why build myoga?
+
+myoga is designed for local review of sensitive outbreak datasets.
+
+During normal use:
+
+- users select files from their own machine
+- files are kept in local browser memory
+- the app is served from `127.0.0.1`
+- no myoga server receives genomic files or metadata
+- release builds work without external setup
+
+---
+
+## Quick Start
+
+The easiest way to use myoga is to download a release.
+
+1. Go to the **Releases** page.
+2. Download the ZIP file for your operating system.
+3. Unzip it.
+4. Run the myoga executable.
+
+Platform examples:
+
+- **Windows:** double-click `myoga.exe`
+- **macOS/Linux:** double-click or run `./myoga`
+
+myoga starts a local server on:
+
+```text
+127.0.0.1
+```
+
+Then it opens the app in your default browser.
+
+No Python, Node.js, or command-line setup is required for release builds.
+
+---
+
+## What You Load
+
+myoga uses three local files from a Parsnp analysis:
 
 - `parsnp.ggr`
 - `parsnp.tree`
-- a metadata table for the genomes in the parsnp run
+- a metadata table for the genomes in the Parsnp run
 
-The app keeps those files in your browser memory and does not upload genomic or
-metadata content anywhere. It is intended for case-by-case confidential outbreak
-review where a Microreact-like geographic/tree/metadata view is useful, but data
-should remain on the local machine.
+The app keeps these files in browser memory and does **not** upload genomic data, metadata, coordinates, or outbreak files anywhere.
 
-## Use A Release Executable
+---
 
-For non-technical users, use a packaged `myoga` executable for their operating
-system:
+## What myoga Shows
 
-- Windows: double-click `myoga.exe`
-- macOS/Linux: double-click or open `myoga`
+myoga provides an interactive local view of:
 
-The executable starts a local-only server on `127.0.0.1`, opens the default
-browser, and serves the bundled app, maps, and example files from inside the
-binary. Genomic files and metadata selected in the browser stay on the local
-machine. Close the launcher window to stop myoga.
+- genome/sample locations on a map
+- the Parsnp phylogenomic tree
+- linked sample metadata
+- optional local GeoJSON geography layers
+- bundled offline map data
 
-## Use From Source
+It is intended for confidential, case-by-case outbreak review where data should remain local.
 
-Open [index.html](./index.html) in a browser, or serve the directory locally:
+---
 
-```bash
-python3 -m http.server 4173
-```
+## Example Data
 
-Then visit <http://localhost:4173>.
+To get a better look at what myoga can do use the example data in the `assets/mers49` folder.
 
-Load the three files from the toolbar. Once metadata is detected, choose or
-adjust the ID, latitude, longitude, location, and color columns in the left
-panel if the automatic guesses are not right for your table.
+The example opens in an offline globe view. Users can switch between globe and flat map modes, inspect tree structure, view metadata, and test the interface without providing their own files.
 
-The `Example` button loads the bundled example Parsnp files and dummy metadata
-when the app is served locally. The map opens in an offline globe view. Drag the
-globe to rotate it, scroll or use the `+`/`-` buttons to zoom, use `Reset` to
-return to the default view, and switch to `Flat` when a panning equirectangular
-overview is easier. Use the small edge controls on the left panel, right
-metadata panel, and tree panel to collapse them when you want more map space.
-Large phylogenomic trees can be scrolled with the trackpad/mouse wheel or
-dragged inside the tree panel to pan across long labels and many tips.
-Use `Midpoint root` to redraw the tree around its longest leaf-to-leaf midpoint,
-or `Original root` to return to the input Newick rooting.
+---
 
-Use the `GeoJSON` file input to load a custom local outbreak geography layer.
-Custom GeoJSON is rendered only in `Flat` mode, automatically switches the map
-to flat view, and fits the map to the uploaded layer bounds. For genome points
-to align, custom coordinates should be longitude/latitude in WGS84/EPSG:4326.
-The `US Counties` map button loads a bundled county-level United States GeoJSON
-for finer local outbreak views without selecting a file. It opens fitted to the
-continental United States for a useful working zoom; pan or zoom out to inspect
-Alaska, Hawaii, or Puerto Rico.
+## Documentation
 
-## Build Release Executables
+Longer documentation is available in the project wiki.
 
-Release binaries are built with Go and embed the static app assets:
+- Metadata file creation
+- Supported metadata columns
+- Custom GeoJSON layers
+- Troubleshooting
 
-```bash
-scripts/build-release.sh v0.1.1
-```
-
-The script writes ignored release folders under `dist/`:
-
-- `myoga-v0.1.1-windows-amd64/myoga.exe`
-- `myoga-v0.1.1-windows-arm64/myoga.exe`
-- `myoga-v0.1.1-linux-amd64/myoga`
-- `myoga-v0.1.1-linux-arm64/myoga`
-- `myoga-v0.1.1-darwin-amd64/myoga`
-- `myoga-v0.1.1-darwin-arm64/myoga`
-
-The binaries are self-contained. They do not require Python, Node, or command
-line use by the end user.
-
-## Metadata
-
-CSV, TSV, and semicolon-delimited text are supported. The app tries to infer
-common column names:
-
-- Genome/sample ID: `genome`, `genome_id`, `sample_id`, `isolate`, `strain`,
-  `accession`, `name`, `id`
-- Latitude: `latitude`, `lat`, `decimal_latitude`
-- Longitude: `longitude`, `lon`, `lng`, `decimal_longitude`
-- Combined coordinates: `lat_lon`, `latitude_longitude`, `coordinates`
-- Location/country: `location`, `geo_loc_name`, `country`,
-  `geographic_location`
-- Date: `collection_date`, `date`, `sample_date`
-
-Rows with exact latitude/longitude are mapped directly. Rows without coordinates
-can still be placed at a country centroid when a recognizable country appears in
-the location/country column.
+---
 
 ## Notes
 
-- `parsnp.tree` is the authoritative source for phylogenetic labels.
-- `parsnp.ggr` is read locally and used to cross-check genome names that can be
-  extracted from the parsnp/gingr project file.
-- The detailed world map/globe uses the bundled Natural Earth 50m countries
-  GeoJSON under `assets/`, so no map tiles or metadata are requested from remote
-  servers during use. If the HTML is opened directly from disk and the browser
-  blocks local asset loading, myoga falls back to a simpler built-in basemap.
-  Natural Earth vector data is public domain.
-- `assets/us_counties_fips.geojson` is a bundled county-level United States
-  GeoJSON from the Plotly datasets repository, commonly used for FIPS-keyed
-  county maps.
+- `parsnp.tree` is used as the authoritative source for phylogenetic labels.
+- `parsnp.ggr` is read locally and used to cross-check genome names from the Parsnp/Gingr project file.
+- myoga includes bundled map assets for offline-friendly use.
+- Custom local GeoJSON layers can be loaded for outbreak-specific geography.
+
+---
+
+## Author
+
+Austin G. Marshall
