@@ -11,10 +11,14 @@
       <header class="topbar">
         <div class="brand">
           <strong>myoga</strong>
-          <span>local parsnp outbreak map</span>
+          <span>local genomic relatedness map</span>
         </div>
+        <label class="file-picker mlvamaps-picker">
+          <span>mlvamaps export</span>
+          <input id="mlvamapsExport" type="file" webkitdirectory directory multiple>
+        </label>
         <label class="file-picker">
-          <span>GGR</span>
+          <span>GGR (optional)</span>
           <input id="ggrFile" type="file" accept=".ggr,.gingr,*/*">
         </label>
         <label class="file-picker">
@@ -86,9 +90,9 @@
         <svg id="mapSvg" viewBox="0 0 1000 500" role="img" aria-label="World map with genome locations"></svg>
       </section>
 
-      <section class="tree-panel" aria-label="Parsnp tree">
+      <section class="tree-panel" aria-label="Relatedness tree">
         <header>
-          <strong>parsnp tree</strong>
+          <strong id="treeHeading">relatedness tree</strong>
           <button id="midpointRootTree" class="tree-action" type="button">Midpoint root</button>
           <button id="originalRootTree" class="tree-action" type="button">Original root</button>
           <span id="treeStatus">waiting for Newick</span>

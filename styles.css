@@ -85,7 +85,7 @@ input:hover {
 .topbar {
   grid-column: 1 / 4;
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) repeat(4, minmax(132px, 190px)) auto;
+  grid-template-columns: minmax(160px, 1fr) repeat(5, minmax(128px, 180px)) auto;
   gap: 8px;
   align-items: center;
   padding: 8px;
@@ -118,12 +118,18 @@ input:hover {
 
 .file-picker {
   display: grid;
-  grid-template-columns: 54px 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px;
   align-items: center;
   min-width: 0;
   padding: 7px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.03);
+}
+
+.mlvamaps-picker {
+  border-color: rgba(105, 211, 143, 0.48);
+  background: rgba(105, 211, 143, 0.08);
 }
 
 .file-picker input {

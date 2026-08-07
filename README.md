@@ -2,7 +2,9 @@
 
 **Map Your Own Genomics Atlas**
 
-**myoga** is a local-first tool for geographically visualizing [parsnp](https://github.com/marbl/parsnp) outbreak datasets.
+**myoga** is a local-first tool for geographically visualizing relatedness
+trees from [mlvamaps](https://github.com/microbemarsh/mlvamaps) or
+[Parsnp](https://github.com/marbl/parsnp) outbreak datasets.
 
 It lets users explore phylogenomic trees, sample metadata, and geographic locations in a Microreact-like interface while keeping genomic and metadata files on their own machine.
 
@@ -51,15 +53,40 @@ No Python, Node.js, or command-line setup is required for release builds.
 
 ---
 
-## What You Load
+## Load an MLVAmaps export
 
-myoga uses three local files from a Parsnp analysis:
+Run `mlvamaps export-myoga`, then use the **mlvamaps export** picker in myoga
+to select its output directory. No `.ggr` file is needed. myoga recognizes:
 
-- `parsnp.ggr`
-- `parsnp.tree`
-- a metadata table for the genomes in the Parsnp run
+- `mlva_nj.tree` with `myoga_metadata.tsv`
+- `combined_marker_nj.tree` with `combined_marker_metadata.tsv`
 
-The app keeps these files in browser memory and does **not** upload genomic data, metadata, coordinates, or outbreak files anywhere.
+When both pairs are present, myoga loads the tree containing the most samples;
+ties prefer the combined-marker tree. The status panel reports which pair was
+selected. You can still use the individual **Tree** and **Metadata** pickers to
+choose a different pair.
+
+For example:
+
+```bash
+mlvamaps export-myoga \
+  --results mlvamaps_output/ \
+  --metadata metadata.tsv \
+  --combined-markers \
+  --loci loci.csv \
+  -o myoga_export/
+```
+
+Then select `myoga_export/` in myoga.
+
+## Load a Parsnp dataset
+
+The existing Parsnp workflow remains supported. Load `parsnp.tree`, its
+metadata table, and optionally `parsnp.ggr`. GGR is used only to cross-check
+genome identifiers; it is not required to draw the tree or map.
+
+The app keeps all selected files in browser memory and does **not** upload
+genomic data, metadata, coordinates, or outbreak files anywhere.
 
 ---
 
@@ -68,7 +95,7 @@ The app keeps these files in browser memory and does **not** upload genomic data
 myoga provides an interactive local view of:
 
 - genome/sample locations on a map
-- the Parsnp phylogenomic tree
+- an mlvamaps relatedness tree or Parsnp phylogenomic tree
 - linked sample metadata
 - optional local GeoJSON geography layers
 - bundled offline map data
@@ -98,8 +125,10 @@ Longer documentation is available in the project wiki.
 
 ## Notes
 
-- `parsnp.tree` is used as the authoritative source for phylogenetic labels.
-- `parsnp.ggr` is read locally and used to cross-check genome names from the Parsnp/Gingr project file.
+- The selected Newick tree is the authoritative source for sample labels.
+- mlvamaps exports do not require a `.ggr` file.
+- For Parsnp data, `parsnp.ggr` is optional and is used only to cross-check
+  genome names from the Parsnp/Gingr project file.
 - myoga includes bundled map assets for offline-friendly use.
 - Custom local GeoJSON layers can be loaded for outbreak-specific geography.
 

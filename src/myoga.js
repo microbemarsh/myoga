@@ -58,6 +58,8 @@
 
   const state = {
     ggrIds: new Set(),
+    datasetKind: "generic",
+    datasetLabel: "relatedness tree",
     treeText: "",
     treeRoot: null,
     treeTips: [],
@@ -90,6 +92,7 @@
 
   const el = {
     appShell: document.querySelector(".app-shell"),
+    mlvamapsExport: byId("mlvamapsExport"),
     ggrFile: byId("ggrFile"),
     treeFile: byId("treeFile"),
     metadataFile: byId("metadataFile"),
@@ -124,6 +127,7 @@
     treeScroll: byId("treeScroll"),
     treeSvg: byId("treeSvg"),
     treeStatus: byId("treeStatus"),
+    treeHeading: byId("treeHeading"),
     midpointRootTree: byId("midpointRootTree"),
     originalRootTree: byId("originalRootTree"),
     toggleControls: byId("toggleControls"),
@@ -150,6 +154,7 @@
   }
 
   function bindEvents() {
+    el.mlvamapsExport.addEventListener("change", () => readMlvamapsExport(el.mlvamapsExport.files));
     el.ggrFile.addEventListener("change", () => readGgr(el.ggrFile.files[0]));
     el.treeFile.addEventListener("change", () => readTree(el.treeFile.files[0]));
     el.metadataFile.addEventListener("change", () => readMetadata(el.metadataFile.files[0]));
@@ -334,11 +339,108 @@
     }
   }
 
+  async function readMlvamapsExport(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    setStatus(`Inspecting ${files.length} files in the selected MLVAmaps export.`);
+    try {
+      const candidates = mlvamapsExportCandidates(files);
+      if (!candidates.length) {
+        throw new Error(
+          "no complete export pair found; expected mlva_nj.tree with myoga_metadata.tsv " +
+          "or combined_marker_nj.tree with combined_marker_metadata.tsv"
+        );
+      }
+      const loaded = [];
+      const failures = [];
+      for (const candidate of candidates) {
+        try {
+          const [treeText, metadataText] = await Promise.all([
+            candidate.treeFile.text(),
+            candidate.metadataFile.text()
+          ]);
+          const treeRoot = parseNewick(treeText.trim());
+          const treeTips = flattenTips(treeRoot);
+          const metadata = parseTable(metadataText);
+          if (!treeTips.length) throw new Error("tree has no named tips");
+          if (!bestColumn(metadata.headers, ID_COLUMNS)) {
+            throw new Error("metadata has no recognized sample identifier column");
+          }
+          loaded.push({ ...candidate, treeText, treeRoot, treeTips, metadata });
+        } catch (error) {
+          failures.push(`${candidate.label}: ${error.message}`);
+        }
+      }
+      if (!loaded.length) throw new Error(failures.join("; "));
+
+      loaded.sort((left, right) => {
+        const tipDifference = right.treeTips.length - left.treeTips.length;
+        if (tipDifference) return tipDifference;
+        return Number(right.kind === "combined") - Number(left.kind === "combined");
+      });
+      const selected = loaded[0];
+      state.ggrIds = new Set();
+      state.treeText = selected.treeText;
+      state.treeRoot = selected.treeRoot;
+      state.treeTips = selected.treeTips;
+      state.metadata = selected.metadata;
+      setDatasetSource("mlvamaps", selected.label);
+      guessColumns();
+      populateColumnControls();
+      reconcile();
+      const alternate = loaded.length > 1
+        ? ` The ${loaded[1].label} is also present (${loaded[1].treeTips.length} tips).`
+        : "";
+      setStatus(
+        `Loaded ${selected.label} from the MLVAmaps export: ` +
+        `${selected.treeTips.length} tree tips and ${selected.metadata.rows.length} metadata rows.${alternate}`
+      );
+    } catch (error) {
+      setStatus(`MLVAmaps export failed: ${error.message}`);
+    }
+  }
+
+  function mlvamapsExportCandidates(files) {
+    const byName = new Map();
+    for (const file of files) {
+      const name = String(file.name || "").toLowerCase();
+      if (name && !byName.has(name)) byName.set(name, file);
+    }
+    return [
+      {
+        kind: "combined",
+        label: "MLVAmaps combined-marker tree",
+        treeFile: byName.get("combined_marker_nj.tree"),
+        metadataFile: byName.get("combined_marker_metadata.tsv")
+      },
+      {
+        kind: "mlva",
+        label: "MLVAmaps MLVA tree",
+        treeFile: byName.get("mlva_nj.tree"),
+        metadataFile: byName.get("myoga_metadata.tsv")
+      }
+    ].filter((candidate) => candidate.treeFile && candidate.metadataFile);
+  }
+
+  function setDatasetSource(kind, label) {
+    state.datasetKind = kind;
+    state.datasetLabel = label;
+    el.treeHeading.textContent = label;
+  }
+
+  function mlvamapsTreeLabel(fileName) {
+    const name = String(fileName || "").toLowerCase();
+    if (name === "combined_marker_nj.tree") return "MLVAmaps combined-marker tree";
+    if (name === "mlva_nj.tree") return "MLVAmaps MLVA tree";
+    return "";
+  }
+
   async function readGgr(file) {
     if (!file) return;
     setStatus(`Reading ${file.name} locally.`);
     const buffer = await file.arrayBuffer();
     state.ggrIds = extractGgrIds(new Uint8Array(buffer));
+    setDatasetSource("parsnp", "Parsnp phylogeny");
     setStatus(`Read ${file.name}; extracted ${state.ggrIds.size} possible genome labels.`);
     reconcile();
   }
@@ -347,12 +449,27 @@
     if (!file) return;
     setStatus(`Reading ${file.name} locally.`);
     state.treeText = await file.text();
+    const mlvamapsLabel = mlvamapsTreeLabel(file.name);
+    if (mlvamapsLabel) {
+      state.ggrIds = new Set();
+      setDatasetSource("mlvamaps", mlvamapsLabel);
+    } else if (state.ggrIds.size) {
+      setDatasetSource("parsnp", "Parsnp phylogeny");
+    } else {
+      setDatasetSource("generic", "relatedness tree");
+    }
     loadTreeText(state.treeText);
   }
 
   async function readMetadata(file) {
     if (!file) return;
     setStatus(`Reading ${file.name} locally.`);
+    if (
+      state.datasetKind === "generic" &&
+      ["myoga_metadata.tsv", "combined_marker_metadata.tsv"].includes(file.name.toLowerCase())
+    ) {
+      setDatasetSource("mlvamaps", "MLVAmaps relatedness tree");
+    }
     loadMetadataText(await file.text());
   }
 
@@ -410,7 +527,7 @@
 
   function midpointRootLoadedTree() {
     if (!state.treeText.trim()) {
-      setStatus("Load parsnp.tree before midpoint rooting.");
+      setStatus("Load a tree before midpoint rooting.");
       return;
     }
     try {
@@ -425,7 +542,7 @@
 
   function restoreOriginalTreeRoot() {
     if (!state.treeText.trim()) {
-      setStatus("Load parsnp.tree before restoring the original root.");
+      setStatus("Load a tree before restoring the original root.");
       return;
     }
     loadTreeText(state.treeText);
@@ -446,6 +563,7 @@
 
   async function loadExample() {
     try {
+      setDatasetSource("parsnp", "Parsnp phylogeny");
       const [ggrResponse, treeResponse, metadataResponse] = await Promise.all([
         fetch("example/mers49/parsnp.ggr"),
         fetch("example/mers49/parsnp.tree"),
@@ -463,6 +581,7 @@
   }
 
   function loadTinyExample() {
+    setDatasetSource("parsnp", "Parsnp phylogeny");
     state.ggrIds = new Set(["sample_a", "sample_b", "sample_c", "sample_d", "reference_1"].map(canonicalId));
     loadTreeText("((sample_a:0.02,sample_b:0.03):0.01,(sample_c:0.04,(sample_d:0.02,reference_1:0.05):0.02):0.01);");
     loadMetadataText([
@@ -694,14 +813,14 @@
       el.mapSvg.append(circle);
     }
     el.mapTitle.textContent = state.mapMode === "globe"
-      ? `${visible} visible / ${mapped.length} mapped genomes`
-      : `${mapped.length} mapped genomes${state.customMapName ? ` · ${state.customMapName}` : ""}`;
+      ? `${visible} visible / ${mapped.length} mapped samples`
+      : `${mapped.length} mapped samples${state.customMapName ? ` · ${state.customMapName}` : ""}`;
 
     if (!mapped.length) {
       const text = svg("text", { x: W / 2, y: H / 2, "text-anchor": "middle", class: "map-label" }, "No map-ready coordinates in view");
       el.mapSvg.append(text);
     } else if (!visible && state.mapMode === "globe") {
-      const text = svg("text", { x: W / 2, y: H / 2, "text-anchor": "middle", class: "map-label" }, "Rotate the globe to bring mapped genomes into view");
+      const text = svg("text", { x: W / 2, y: H / 2, "text-anchor": "middle", class: "map-label" }, "Rotate the globe to bring mapped samples into view");
       el.mapSvg.append(text);
     }
   }
@@ -863,7 +982,7 @@
   function drawTree() {
     el.treeSvg.textContent = "";
     if (!state.treeRoot) {
-      el.treeSvg.append(svg("text", { x: 24, y: 42, class: "tree-label" }, "Load parsnp.tree to draw a phylogeny."));
+      el.treeSvg.append(svg("text", { x: 24, y: 42, class: "tree-label" }, "Load an MLVAmaps export or Newick tree to begin."));
       return;
     }
     const leaves = flattenTips(state.treeRoot);
@@ -924,17 +1043,21 @@
       drawTree();
       return;
     }
-    el.detailSource.textContent = genome.metadataOnly ? "METADATA ONLY" : "PARSNP GENOME";
+    el.detailSource.textContent = genome.metadataOnly
+      ? "METADATA ONLY"
+      : `${state.datasetLabel} sample`.toUpperCase();
     el.detailTitle.textContent = genome.label;
     el.detailSubtitle.textContent = genome.location || genome.colorValue || "No location metadata";
     const basics = [
       ["Tree", genome.inTree ? "present" : "not present"],
-      ["GGR", genome.inGgr ? "matched" : state.ggrIds.size ? "not matched" : "not loaded"],
       ["Coordinates", isMapped(genome) ? `${genome.latitude.toFixed(5)}, ${genome.longitude.toFixed(5)}` : "not mapped"],
       ["Precision", genome.isCentroid ? "country centroid" : (genome.coordinateSource || "unknown")],
       ["Date", genome.dateValue || "unknown"],
       ["Color", genome.colorValue || "unassigned"]
     ];
+    if (state.datasetKind === "parsnp" || state.ggrIds.size) {
+      basics.splice(1, 0, ["GGR", genome.inGgr ? "matched" : state.ggrIds.size ? "not matched" : "not loaded"]);
+    }
     el.detailBasics.textContent = "";
     for (const [key, value] of basics) {
       const item = document.createElement("div");
@@ -961,7 +1084,9 @@
       type: "Feature",
       geometry: { type: "Point", coordinates: [genome.longitude, genome.latitude] },
       properties: {
+        sample_id: genome.label,
         genome_id: genome.label,
+        dataset_source: state.datasetLabel,
         in_tree: genome.inTree,
         in_ggr: genome.inGgr,
         coordinate_source: genome.coordinateSource,
@@ -976,6 +1101,8 @@
   function exportSession() {
     const payload = {
       generated_by: "myoga",
+      dataset_kind: state.datasetKind,
+      dataset_source: state.datasetLabel,
       tree_tips: state.treeTips.map((tip) => tip.name),
       ggr_ids: Array.from(state.ggrIds),
       columns: state.columnMap,
@@ -1071,12 +1198,20 @@
         const quote = text[index];
         index += 1;
         let value = "";
-        while (index < text.length && text[index] !== quote) {
+        while (index < text.length) {
+          if (text[index] === quote) {
+            if (text[index + 1] === quote) {
+              value += quote;
+              index += 2;
+              continue;
+            }
+            index += 1;
+            return value;
+          }
           value += text[index];
           index += 1;
         }
-        index += 1;
-        return value;
+        throw new Error("unterminated quoted Newick label");
       }
       return readUntil(":,();").trim();
     }
