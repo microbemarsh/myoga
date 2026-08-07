@@ -106,7 +106,7 @@ It is intended for confidential, case-by-case outbreak review where data should 
 
 ## Example Data
 
-To get a better look at what myoga can do use the example data in the `assets/mers49` folder.
+To get a better look at what myoga can do, use the example data in the `example/mers49` folder.
 
 The example opens in an offline globe view. Users can switch between globe and flat map modes, inspect tree structure, view metadata, and test the interface without providing their own files.
 
@@ -126,11 +126,16 @@ Longer documentation is available in the project wiki.
 ## Notes
 
 - The selected Newick tree is the authoritative source for sample labels.
+- Tree distance clades are the default color mode when a tree is loaded. The
+  clade-depth control cuts the tree by cumulative branch distance; higher values
+  create more, smaller clades. Metadata columns remain available in the Color
+  menu.
 - mlvamaps exports do not require a `.ggr` file.
 - For Parsnp data, `parsnp.ggr` is optional and is used only to cross-check
   genome names from the Parsnp/Gingr project file.
 - myoga includes bundled map assets for offline-friendly use.
 - Custom local GeoJSON layers can be loaded for outbreak-specific geography.
+- Map zoom extends to 14x in globe mode and 48x in flat mode.
 
 ---
 

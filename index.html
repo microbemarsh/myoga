@@ -57,6 +57,10 @@
           <label>Location<select id="locationColumn"></select></label>
           <label>Date<select id="dateColumn"></select></label>
           <label>Color<select id="colorColumn"></select></label>
+          <label id="treeCladeControl" class="tree-clade-control" hidden title="Higher values create smaller, more closely related clades.">
+            Tree clade depth <output id="treeCladeDepthValue" for="treeCladeDepth">10%</output>
+            <input id="treeCladeDepth" type="range" min="0" max="100" step="1" value="10">
+          </label>
         </section>
 
         <section>

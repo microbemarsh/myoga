@@ -266,6 +266,22 @@ input[type="search"] {
   text-transform: none;
 }
 
+.tree-clade-control[hidden] {
+  display: none;
+}
+
+.tree-clade-control output {
+  float: right;
+  color: var(--green);
+  text-transform: none;
+}
+
+.tree-clade-control input[type="range"] {
+  width: 100%;
+  margin-top: 8px;
+  accent-color: var(--green);
+}
+
 .checkline {
   display: flex;
   gap: 8px;
@@ -301,9 +317,14 @@ input[type="search"] {
   overflow: hidden;
   background: #06100f;
   cursor: grab;
+  touch-action: none;
 }
 
 .map-panel.dragging {
+  cursor: grabbing;
+}
+
+.map-panel.dragging .map-point {
   cursor: grabbing;
 }
 
@@ -376,6 +397,7 @@ input[type="search"] {
   fill: none;
   stroke: rgba(221, 237, 230, 0.08);
   stroke-width: 1;
+  pointer-events: none;
 }
 
 .land {
@@ -400,6 +422,7 @@ input[type="search"] {
   fill: none;
   stroke: rgba(210, 225, 214, 0.25);
   stroke-width: 1.1;
+  pointer-events: none;
 }
 
 .country-line {
@@ -411,6 +434,11 @@ input[type="search"] {
   stroke: #f4fff6;
   stroke-width: 1.4;
   cursor: pointer;
+}
+
+.map-point-cloud {
+  opacity: 0.86;
+  pointer-events: none;
 }
 
 .map-point.centroid {

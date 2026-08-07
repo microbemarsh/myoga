@@ -3,9 +3,14 @@
 
   const W = 1000;
   const H = 500;
+  const MAX_GLOBE_ZOOM = 14;
+  const MAX_FLAT_ZOOM = 48;
   const WORLD_MAP_URL = "assets/ne_50m_admin_0_countries.geojson";
   const US_COUNTIES_MAP_URL = "assets/us_counties_fips.geojson";
   const COLORS = ["#69d38f", "#6bb7ff", "#e8bd5c", "#e58ade", "#f0786f", "#9bc978", "#b7a1ff", "#69d2c4"];
+  const TREE_CLADE_COLOR = "__tree_distance_clades__";
+  const TREE_CLADE_PREFIX = "Tree clade ";
+  const TREE_CLADE_UNMATCHED = "Tree clade (not in tree)";
   const MISSING = new Set(["", "na", "n/a", "none", "null", "missing", "unknown", "not provided", "not collected", "not determined", "not available"]);
   const ID_COLUMNS = ["genome", "genome_id", "sample", "sample_id", "isolate", "isolate_id", "strain", "accession", "assembly_accession", "name", "id"];
   const LAT_COLUMNS = ["latitude", "lat", "decimal_latitude", "decimal_lat", "y"];
@@ -71,8 +76,10 @@
     colorColumn: "",
     filterColumn: "",
     filterValue: "",
+    treeCladeDepth: 0.10,
     worldFeatures: [],
     worldRings: [],
+    worldGlobeRings: [],
     worldMapLoaded: false,
     customMapName: "",
     customRings: [],
@@ -87,6 +94,8 @@
     detailsCollapsed: false,
     treeCollapsed: false,
     drag: null,
+    ignoreMapClicksUntil: 0,
+    mapDrawFrame: 0,
     treeDrag: null
   };
 
@@ -109,6 +118,9 @@
     locationColumn: byId("locationColumn"),
     dateColumn: byId("dateColumn"),
     colorColumn: byId("colorColumn"),
+    treeCladeControl: byId("treeCladeControl"),
+    treeCladeDepth: byId("treeCladeDepth"),
+    treeCladeDepthValue: byId("treeCladeDepthValue"),
     searchBox: byId("searchBox"),
     filterColumn: byId("filterColumn"),
     filterValue: byId("filterValue"),
@@ -163,9 +175,17 @@
     for (const node of [el.idColumn, el.latColumn, el.lonColumn, el.latLonColumn, el.locationColumn, el.dateColumn, el.colorColumn]) {
       node.addEventListener("change", () => {
         state.columnMap = readColumnMap();
+        updateTreeCladeControl();
         reconcile();
       });
     }
+    el.treeCladeDepth.addEventListener("input", () => {
+      el.treeCladeDepthValue.value = `${el.treeCladeDepth.value}%`;
+    });
+    el.treeCladeDepth.addEventListener("change", () => {
+      state.treeCladeDepth = Number(el.treeCladeDepth.value) / 100;
+      reconcile();
+    });
     el.searchBox.addEventListener("input", applyFilters);
     el.filterColumn.addEventListener("change", () => {
       state.filterColumn = el.filterColumn.value;
@@ -195,6 +215,8 @@
     el.mapSvg.addEventListener("pointermove", moveMapDrag);
     el.mapSvg.addEventListener("pointerup", endMapDrag);
     el.mapSvg.addEventListener("pointercancel", endMapDrag);
+    window.addEventListener("pointerup", endMapDrag);
+    window.addEventListener("pointercancel", endMapDrag);
     el.mapSvg.addEventListener("click", clickMap);
     el.mapSvg.addEventListener("wheel", zoomMapWheel, { passive: false });
     el.mapSvg.addEventListener("dblclick", () => setMapZoom(state.mapZoom * 1.25));
@@ -234,12 +256,12 @@
 
   function setMapMode(mode) {
     state.mapMode = mode;
-    state.mapZoom = clamp(state.mapZoom, 0.72, state.mapMode === "globe" ? 5.5 : 18);
+    state.mapZoom = clamp(state.mapZoom, 0.72, state.mapMode === "globe" ? MAX_GLOBE_ZOOM : MAX_FLAT_ZOOM);
     drawMap();
   }
 
   function setMapZoom(value) {
-    state.mapZoom = clamp(value, 0.72, state.mapMode === "globe" ? 5.5 : 18);
+    state.mapZoom = clamp(value, 0.72, state.mapMode === "globe" ? MAX_GLOBE_ZOOM : MAX_FLAT_ZOOM);
     drawMap();
   }
 
@@ -258,17 +280,33 @@
 
   function startMapDrag(event) {
     if (event.button !== undefined && event.button !== 0) return;
-    if (event.target?.classList?.contains("map-point")) return;
-    state.drag = { x: event.clientX, y: event.clientY, moved: false };
-    el.mapSvg.setPointerCapture?.(event.pointerId);
-    el.mapSvg.closest(".map-panel")?.classList.add("dragging");
+    if (event.isPrimary === false) return;
+    state.drag = {
+      startX: event.clientX,
+      startY: event.clientY,
+      x: event.clientX,
+      y: event.clientY,
+      pointerId: event.pointerId,
+      moved: false
+    };
   }
 
   function moveMapDrag(event) {
     if (!state.drag) return;
+    const totalDistance = Math.hypot(
+      event.clientX - state.drag.startX,
+      event.clientY - state.drag.startY
+    );
+    if (!state.drag.moved && totalDistance <= 4) return;
+    if (!state.drag.moved) {
+      state.drag.moved = true;
+      el.mapSvg.setPointerCapture?.(state.drag.pointerId);
+      el.mapSvg.closest(".map-panel")?.classList.add("dragging");
+    }
     const dx = event.clientX - state.drag.x;
     const dy = event.clientY - state.drag.y;
-    state.drag = { x: event.clientX, y: event.clientY, moved: state.drag.moved || Math.abs(dx) + Math.abs(dy) > 3 };
+    state.drag.x = event.clientX;
+    state.drag.y = event.clientY;
     if (state.mapMode === "globe") {
       state.rotationLon = wrapLongitude(state.rotationLon - dx / (2.4 * state.mapZoom));
       state.rotationLat = clamp(state.rotationLat + dy / (2.4 * state.mapZoom), -78, 78);
@@ -276,14 +314,29 @@
       state.flatPanX += dx;
       state.flatPanY += dy;
     }
-    drawMap();
+    scheduleMapDraw();
   }
 
   function endMapDrag(event) {
     if (!state.drag) return;
+    const moved = state.drag.moved;
+    if (moved && event.type === "pointerup") {
+      state.ignoreMapClicksUntil = performance.now() + 250;
+    }
     state.drag = null;
-    el.mapSvg.releasePointerCapture?.(event.pointerId);
+    if (moved && el.mapSvg.hasPointerCapture?.(event.pointerId)) {
+      el.mapSvg.releasePointerCapture?.(event.pointerId);
+    }
     el.mapSvg.closest(".map-panel")?.classList.remove("dragging");
+    if (moved) scheduleMapDraw();
+  }
+
+  function scheduleMapDraw() {
+    if (state.mapDrawFrame) return;
+    state.mapDrawFrame = requestAnimationFrame(() => {
+      state.mapDrawFrame = 0;
+      drawMap();
+    });
   }
 
   function zoomMapWheel(event) {
@@ -293,6 +346,7 @@
   }
 
   function clickMap(event) {
+    if (performance.now() < state.ignoreMapClicksUntil) return;
     const genomeId = event.target?.dataset?.genomeId;
     if (genomeId) selectGenome(genomeId);
   }
@@ -330,6 +384,7 @@
       const collection = await response.json();
       state.worldFeatures = Array.isArray(collection.features) ? collection.features : [];
       state.worldRings = state.worldFeatures.flatMap(featureRings);
+      state.worldGlobeRings = state.worldRings.map(simplifyGlobeRing);
       state.worldMapLoaded = state.worldRings.length > 0;
       drawMap();
     } catch (error) {
@@ -516,8 +571,14 @@
 
   function loadTreeText(text) {
     try {
+      const firstTree = !state.treeRoot;
       state.treeRoot = parseNewick(text.trim());
       state.treeTips = flattenTips(state.treeRoot);
+      if (firstTree && state.metadata.headers.length) {
+        state.columnMap.color = TREE_CLADE_COLOR;
+        el.colorColumn.value = TREE_CLADE_COLOR;
+        updateTreeCladeControl();
+      }
       setStatus(`Parsed ${state.treeTips.length} tree tips.`);
       reconcile();
     } catch (error) {
@@ -603,7 +664,9 @@
       latLon: bestColumn(headers, LAT_LON_COLUMNS),
       location: bestColumn(headers, LOCATION_COLUMNS),
       date: bestColumn(headers, DATE_COLUMNS),
-      color: bestColumn(headers, ["lineage", "cluster", "clade", "host", "source", "sample_type", "country"]) || ""
+      color: state.treeRoot
+        ? TREE_CLADE_COLOR
+        : bestColumn(headers, ["lineage", "cluster", "clade", "host", "source", "sample_type", "country"]) || ""
     };
   }
 
@@ -616,7 +679,11 @@
     fillSelect(el.locationColumn, headers, state.columnMap.location, true);
     fillSelect(el.dateColumn, headers, state.columnMap.date, true);
     fillSelect(el.colorColumn, headers, state.columnMap.color, true);
+    el.colorColumn.insertBefore(new Option("Tree distance clades", TREE_CLADE_COLOR), el.colorColumn.firstChild);
+    if (state.columnMap.color === TREE_CLADE_COLOR) el.colorColumn.value = TREE_CLADE_COLOR;
     fillSelect(el.filterColumn, headers, state.filterColumn, true);
+    el.treeCladeDepth.value = String(Math.round(state.treeCladeDepth * 100));
+    updateTreeCladeControl();
   }
 
   function fillSelect(select, values, selected, allowBlank) {
@@ -636,6 +703,17 @@
       date: el.dateColumn.value,
       color: el.colorColumn.value
     };
+  }
+
+  function updateTreeCladeControl() {
+    const active = el.colorColumn.value === TREE_CLADE_COLOR && Boolean(state.treeRoot);
+    el.treeCladeControl.hidden = !active;
+    const cladeCount = unique(state.genomes
+      .map((genome) => genome.colorValue)
+      .filter((value) => value.startsWith(TREE_CLADE_PREFIX) && value !== TREE_CLADE_UNMATCHED)).length;
+    el.treeCladeDepthValue.value = active && cladeCount
+      ? `${Math.round(state.treeCladeDepth * 100)}% · ${cladeCount} clades`
+      : `${Math.round(state.treeCladeDepth * 100)}%`;
   }
 
   function reconcile() {
@@ -659,11 +737,14 @@
     }
 
     const tips = state.treeTips.length ? state.treeTips : rowsAsTips();
+    const treeClades = state.columnMap.color === TREE_CLADE_COLOR && state.treeRoot
+      ? treeCladeAssignments(state.treeRoot, state.treeCladeDepth)
+      : new Map();
     const usedRows = new Set();
     state.genomes = tips.map((tip, index) => {
       const row = matchRow(tip.name, metadataById);
       if (row) usedRows.add(row);
-      return buildGenome(tip, row, index);
+      return buildGenome(tip, row, index, false, treeClades.get(tip.name));
     });
 
     if (!state.treeTips.length) {
@@ -675,6 +756,7 @@
       state.genomes.push(buildGenome({ name: row[idColumn] || `metadata_${state.genomes.length + 1}` }, row, state.genomes.length, true));
     }
 
+    updateTreeCladeControl();
     refreshFilterValues();
     applyFilters();
   }
@@ -691,11 +773,13 @@
     return null;
   }
 
-  function buildGenome(tip, row, index, metadataOnly) {
+  function buildGenome(tip, row, index, metadataOnly, treeClade) {
     const name = cleanLabel(tip.name || `genome_${index + 1}`);
     const id = canonicalId(name) || `genome_${index + 1}`;
     const coords = coordinatesFor(row || {});
-    const colorValue = state.columnMap.color && row ? cleanValue(row[state.columnMap.color]) : "";
+    const colorValue = state.columnMap.color === TREE_CLADE_COLOR
+      ? treeClade || TREE_CLADE_UNMATCHED
+      : state.columnMap.color && row ? cleanValue(row[state.columnMap.color]) : "";
     const dateValue = state.columnMap.date && row ? cleanValue(row[state.columnMap.date]) : "";
     return {
       id,
@@ -790,31 +874,11 @@
     drawLand();
 
     const mapped = state.filtered.filter(isMapped);
-    let visible = 0;
-    const buckets = new Map();
-    for (const genome of mapped) {
-      const point = project(genome.longitude, genome.latitude);
-      if (!point.visible) continue;
-      visible += 1;
-      const key = `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
-      const count = buckets.get(key) || 0;
-      buckets.set(key, count + 1);
-      const jitter = jitterFor(genome.id, count);
-      const circle = svg("circle", {
-        cx: point.x + jitter.x,
-        cy: point.y + jitter.y,
-        r: (genome.id === state.selectedId ? 7 : 5.5) * point.scale,
-        fill: colorFor(genome.colorValue || genome.label),
-        "data-genome-id": genome.id,
-        class: ["map-point", genome.isCentroid ? "centroid" : "", genome.matchedMetadata ? "" : "unmatched", genome.id === state.selectedId ? "selected" : ""].join(" ")
-      });
-      circle.append(svg("title", {}, `${genome.label}\n${genome.location || "No location label"}`));
-      circle.addEventListener("click", () => selectGenome(genome.id));
-      el.mapSvg.append(circle);
-    }
+    const visible = drawMapPoints(mapped);
+    const zoomLabel = `${state.mapZoom.toFixed(1)}×`;
     el.mapTitle.textContent = state.mapMode === "globe"
-      ? `${visible} visible / ${mapped.length} mapped samples`
-      : `${mapped.length} mapped samples${state.customMapName ? ` · ${state.customMapName}` : ""}`;
+      ? `${visible} visible / ${mapped.length} mapped samples · ${zoomLabel}`
+      : `${mapped.length} mapped samples${state.customMapName ? ` · ${state.customMapName}` : ""} · ${zoomLabel}`;
 
     if (!mapped.length) {
       const text = svg("text", { x: W / 2, y: H / 2, "text-anchor": "middle", class: "map-label" }, "No map-ready coordinates in view");
@@ -823,6 +887,49 @@
       const text = svg("text", { x: W / 2, y: H / 2, "text-anchor": "middle", class: "map-label" }, "Rotate the globe to bring mapped samples into view");
       el.mapSvg.append(text);
     }
+  }
+
+  function drawMapPoints(mapped) {
+    let visible = 0;
+    const buckets = new Map();
+    const pointClouds = new Map();
+    for (const genome of mapped) {
+      const point = project(genome.longitude, genome.latitude);
+      if (!point.visible) continue;
+      visible += 1;
+      const key = `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
+      const count = buckets.get(key) || 0;
+      buckets.set(key, count + 1);
+      const jitter = jitterFor(genome.id, count);
+      const x = point.x + jitter.x;
+      const y = point.y + jitter.y;
+      const color = colorFor(genome.colorValue || genome.label);
+      if (state.drag?.moved) {
+        const radius = 4.5 * point.scale;
+        const path = pointClouds.get(color) || [];
+        path.push(
+          `M ${x - radius} ${y} ` +
+          `a ${radius} ${radius} 0 1 0 ${radius * 2} 0 ` +
+          `a ${radius} ${radius} 0 1 0 ${-radius * 2} 0`
+        );
+        pointClouds.set(color, path);
+        continue;
+      }
+      const circle = svg("circle", {
+        cx: x,
+        cy: y,
+        r: (genome.id === state.selectedId ? 7 : 5.5) * point.scale,
+        fill: color,
+        "data-genome-id": genome.id,
+        class: ["map-point", genome.isCentroid ? "centroid" : "", genome.matchedMetadata ? "" : "unmatched", genome.id === state.selectedId ? "selected" : ""].join(" ")
+      });
+      circle.append(svg("title", {}, `${genome.label}\n${genome.location || "No location label"}`));
+      el.mapSvg.append(circle);
+    }
+    for (const [color, commands] of pointClouds) {
+      el.mapSvg.append(svg("path", { d: commands.join(" "), fill: color, class: "map-point-cloud" }));
+    }
+    return visible;
   }
 
   function drawGlobeShell() {
@@ -845,15 +952,19 @@
       }
       return;
     }
-    for (let lon = -180; lon <= 180; lon += 30) {
-      drawVisibleLine(range(-85, 85, 3).map((lat) => [lon, lat]), "graticule");
-    }
+    const lines = [];
+    for (let lon = -180; lon <= 180; lon += 30) lines.push(range(-85, 85, 3).map((lat) => [lon, lat]));
     for (let lat = -60; lat <= 60; lat += 30) {
-      drawVisibleLine(range(-180, 180, 3).map((lon) => [lon, lat]), "graticule");
+      lines.push(range(-180, 180, 3).map((lon) => [lon, lat]));
     }
+    drawProjectedLines(lines, "graticule");
   }
 
   function drawLand() {
+    if (state.mapMode === "globe" && state.drag?.moved) {
+      drawFallbackGlobeLand();
+      return;
+    }
     if ((state.mapMode === "flat" && state.customRings.length) || state.worldMapLoaded) {
       drawGeoJsonLand();
       return;
@@ -867,9 +978,11 @@
       }
       return;
     }
-    for (const polygon of LAND) {
-      drawVisibleLine(densifyPolygon(polygon, 4), "land-line");
-    }
+    drawFallbackGlobeLand();
+  }
+
+  function drawFallbackGlobeLand() {
+    drawProjectedLines(LAND.map((polygon) => densifyPolygon(polygon, 4)), "land-line");
     const view = globeView();
     el.mapSvg.append(svg("circle", { cx: W / 2, cy: H / 2, r: view.radius, class: "globe-rim" }));
   }
@@ -886,9 +999,7 @@
       }
       return;
     }
-    for (const ring of state.worldRings) {
-      drawVisibleLine(ring, "land-line country-line");
-    }
+    drawProjectedLines(state.worldGlobeRings, "land-line country-line");
     const view = globeView();
     el.mapSvg.append(svg("circle", { cx: W / 2, cy: H / 2, r: view.radius, class: "globe-rim" }));
   }
@@ -912,6 +1023,23 @@
       .filter((point) => Array.isArray(point) && point.length >= 2)
       .map((point) => [Number(point[0]), Number(point[1])])
       .filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
+  }
+
+  function simplifyGlobeRing(ring) {
+    if (ring.length <= 4) return ring;
+    const tolerance = 0.25;
+    const simplified = [ring[0]];
+    let previous = ring[0];
+    for (let index = 1; index < ring.length - 1; index += 1) {
+      const point = ring[index];
+      const lonDistance = Math.abs(wrapLongitude(point[0] - previous[0]));
+      const latDistance = Math.abs(point[1] - previous[1]);
+      if (Math.max(lonDistance, latDistance) < tolerance) continue;
+      simplified.push(point);
+      previous = point;
+    }
+    simplified.push(ring[ring.length - 1]);
+    return simplified.length >= 4 ? simplified : ring;
   }
 
   function boundsForRings(rings) {
@@ -960,23 +1088,21 @@
       : { minLon: -180, minLat: -90, maxLon: 180, maxLat: 90 };
   }
 
-  function drawVisibleLine(points, className) {
-    let segment = [];
-    const flush = () => {
-      if (segment.length > 1) {
-        el.mapSvg.append(svg("polyline", { points: segment.map((point) => `${point.x},${point.y}`).join(" "), class: className }));
-      }
-      segment = [];
-    };
-    for (const [lon, lat] of points) {
-      const projected = project(lon, lat);
-      if (projected.visible) {
-        segment.push(projected);
-      } else {
-        flush();
+  function drawProjectedLines(lines, className) {
+    const commands = [];
+    for (const points of lines) {
+      let drawing = false;
+      for (const [lon, lat] of points) {
+        const projected = project(lon, lat);
+        if (projected.visible) {
+          commands.push(`${drawing ? "L" : "M"} ${projected.x} ${projected.y}`);
+          drawing = true;
+        } else {
+          drawing = false;
+        }
       }
     }
-    flush();
+    if (commands.length) el.mapSvg.append(svg("path", { d: commands.join(" "), class: className }));
   }
 
   function drawTree() {
@@ -987,6 +1113,23 @@
     }
     const leaves = flattenTips(state.treeRoot);
     const visibleByTip = new Map(state.filtered.map((genome) => [genome.tipName, genome]));
+    const genomeByTip = new Map(state.genomes.filter((genome) => genome.inTree).map((genome) => [genome.tipName, genome]));
+    const cladeByNode = new Map();
+    function resolveBranchClade(node) {
+      if (!node.children.length) {
+        const value = genomeByTip.get(node.name)?.colorValue || "";
+        const clade = state.columnMap.color === TREE_CLADE_COLOR && value !== TREE_CLADE_UNMATCHED ? value : "";
+        cladeByNode.set(node, clade);
+        return clade;
+      }
+      const childClades = node.children.map(resolveBranchClade);
+      const clade = childClades.length && childClades[0] && childClades.every((value) => value === childClades[0])
+        ? childClades[0]
+        : "";
+      cladeByNode.set(node, clade);
+      return clade;
+    }
+    resolveBranchClade(state.treeRoot);
     const rowHeight = 22;
     const left = 18;
     const top = 18;
@@ -1007,11 +1150,14 @@
     for (const node of walkTree(state.treeRoot)) {
       if (!node.children.length) continue;
       for (const child of node.children) {
-        el.treeSvg.append(svg("path", { d: `M ${node.x} ${child.y} L ${child.x} ${child.y} M ${node.x} ${node.y} L ${node.x} ${child.y}`, class: "tree-edge" }));
+        const edge = svg("path", { d: `M ${node.x} ${child.y} L ${child.x} ${child.y} M ${node.x} ${node.y} L ${node.x} ${child.y}`, class: "tree-edge" });
+        const clade = cladeByNode.get(child);
+        if (clade) edge.style.stroke = colorFor(clade);
+        el.treeSvg.append(edge);
       }
     }
     for (const leaf of leaves) {
-      const genome = visibleByTip.get(leaf.name) || state.genomes.find((item) => item.tipName === leaf.name);
+      const genome = visibleByTip.get(leaf.name) || genomeByTip.get(leaf.name);
       const mapped = genome && isMapped(genome);
       const dot = svg("circle", {
         cx: leaf.x,
@@ -1103,6 +1249,7 @@
       generated_by: "myoga",
       dataset_kind: state.datasetKind,
       dataset_source: state.datasetLabel,
+      tree_clade_depth: state.treeCladeDepth,
       tree_tips: state.treeTips.map((tip) => tip.name),
       ggr_ids: Array.from(state.ggrIds),
       columns: state.columnMap,
@@ -1266,6 +1413,37 @@
     }
     visit(root, 0, 0);
     return result;
+  }
+
+  function treeCladeAssignments(root, depthFraction) {
+    const depths = new Map();
+    const tips = [];
+    function measure(node, depth) {
+      depths.set(node, depth);
+      if (!node.children.length) tips.push(node);
+      for (const child of node.children) measure(child, depth + branchLength(child));
+    }
+    measure(root, 0);
+    const maxDepth = Math.max(...tips.map((tip) => depths.get(tip)), 0);
+    const cutoff = maxDepth * clamp(depthFraction, 0, 1);
+    const nodeByTip = new Map();
+    function assign(node, cladeNode) {
+      let selected = cladeNode;
+      if (!selected && node !== root && depths.get(node) >= cutoff) selected = node;
+      if (!node.children.length) {
+        nodeByTip.set(node.name, selected || node);
+        return;
+      }
+      for (const child of node.children) assign(child, selected);
+    }
+    assign(root, null);
+
+    const cladeNodes = Array.from(new Set(nodeByTip.values())).map((node) => ({
+      node,
+      key: flattenTips(node).map((tip) => canonicalId(tip.name)).filter(Boolean).sort()[0] || ""
+    })).sort((left, right) => left.key.localeCompare(right.key));
+    const labelByNode = new Map(cladeNodes.map((entry, index) => [entry.node, `${TREE_CLADE_PREFIX}${index + 1}`]));
+    return new Map(Array.from(nodeByTip, ([tipName, node]) => [tipName, labelByNode.get(node)]));
   }
 
   function midpointRootTree(root) {
@@ -1555,6 +1733,12 @@
   }
 
   function colorFor(value) {
+    if (value === TREE_CLADE_UNMATCHED) return "#93a29a";
+    if (String(value).startsWith(TREE_CLADE_PREFIX)) {
+      const index = Math.max(0, Number.parseInt(String(value).slice(TREE_CLADE_PREFIX.length), 10) - 1);
+      const hue = Math.round((index * 137.508) % 360);
+      return `hsl(${hue} 68% 62%)`;
+    }
     return COLORS[Math.abs(hashCode(value || "missing")) % COLORS.length];
   }
 
