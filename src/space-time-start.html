@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>myoga · Create space-time view</title>
+    <style>
+      body {
+        font:
+          16px system-ui,
+          sans-serif;
+        color: #183c32;
+        background: #edf2ef;
+        margin: 0;
+        padding: 30px;
+      }
+      main {
+        max-width: 760px;
+        margin: auto;
+        background: white;
+        padding: 32px;
+        border-radius: 12px;
+      }
+      h1 {
+        font-size: 28px;
+      }
+      p {
+        line-height: 1.6;
+      }
+      label {
+        display: block;
+        margin: 22px 0;
+      }
+      input {
+        display: block;
+        margin-top: 8px;
+        font: inherit;
+        max-width: 100%;
+      }
+      input[type="text"] {
+        padding: 8px;
+        width: 90%;
+      }
+      button {
+        font: inherit;
+        padding: 12px 20px;
+        color: white;
+        background: #17674e;
+        border: 0;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      a {
+        color: #17674e;
+      }
+      small {
+        color: #526c5e;
+      }
+      code {
+        overflow-wrap: anywhere;
+      }
+      fieldset {
+        border: 1px solid #c9d8ce;
+        margin: 20px 0;
+      }
+      summary {
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a href="/">← myoga map &amp; tree</a>
+      <h1>Space-time observations</h1>
+      <p>
+        Stack observed sample locations through collection time. Inspect date
+        uncertainty, compare metadata, and optionally overlay a bounded graph of
+        genomic neighbors.
+      </p>
+      <form
+        action="/space-time/generate"
+        method="post"
+        enctype="multipart/form-data"
+        target="_blank"
+      >
+        <label
+          >Metadata CSV / TSV
+          <input name="metadata" type="file" accept=".csv,.tsv,.txt" required
+        /></label>
+        <small
+          >Requires a sample ID, coordinates and collection dates. Standardized
+          myoga columns are recognized automatically.</small
+        >
+        <label
+          >Genomic distance matrix (optional)<input
+            name="distances"
+            type="file"
+            accept=".csv,.tsv,.txt"
+        /></label>
+        <label
+          >Cluster assignments (optional)<input
+            name="clusters"
+            type="file"
+            accept=".csv,.tsv,.txt"
+        /></label>
+        <fieldset>
+          <legend>Metagenomic communities (optional)</legend>
+          <label
+            >Kraken2 report folder<input
+              name="kraken-reports"
+              type="file"
+              webkitdirectory
+              directory
+              multiple
+          /></label>
+          <small
+            >Choose a flat folder of per-sample summary reports, not per-read
+            classifications. Filenames should match sample IDs, for example
+            S01.kreport. Alternatively, add a kraken_report filename column to
+            metadata. All uploaded basenames must be unique. Do not combine this
+            input with a genomic distance matrix.</small
+          >
+          <label
+            >Taxonomic rank<select name="taxonomic-rank">
+              <option value="G">Genus</option>
+              <option value="S">Species</option>
+              <option value="F">Family</option>
+              <option value="O">Order</option>
+              <option value="C">Class</option>
+              <option value="P">Phylum</option>
+              <option value="K">Kingdom</option>
+              <option value="D">Domain</option>
+            </select></label
+          >
+          <label
+            >Initial abundance threshold (% of all fragments)<input
+              name="abundance-threshold"
+              type="number"
+              value="1"
+              min="0"
+              max="100"
+              step="any"
+          /></label>
+        </fieldset>
+        <details>
+          <summary>Column overrides &amp; distance label</summary>
+          <fieldset>
+            <label>Sample ID column<input name="id-column" type="text" /></label
+            ><label
+              >Latitude column<input name="lat-column" type="text" /></label
+            ><label
+              >Longitude column<input name="lon-column" type="text" /></label
+            ><label>Date column<input name="time-column" type="text" /></label
+            ><label
+              >Initial color column<input name="color-by" type="text" /></label
+            ><label
+              >Distance label / units<input
+                name="distance-label"
+                type="text"
+                placeholder="genomic distance (input units)"
+            /></label>
+          </fieldset>
+        </details>
+        <button type="submit">Generate portable HTML</button>
+      </form>
+      <p>
+        <small
+          >Files are processed only by your local myoga process. The resulting
+          download opens without a server or network. Browser uploads are
+          limited to 256 MiB; use the CLI for larger files. Date-less samples
+          remain available in the ordinary map.</small
+        >
+      </p>
+      <p>
+        <a href="/space-time/example">Download a synthetic example</a> ·
+        <a href="/example/space-time/metadata.tsv" download
+          >Synthetic metadata</a
+        >
+        ·
+        <a href="/example/space-time/distances.tsv" download
+          >Synthetic distances</a
+        >
+      </p>
+      <p>
+        <code
+          >myoga space-time --metadata myoga_metadata.tsv --output
+          surveillance_4d.html</code
+        >
+      </p>
+      <p>
+        <small
+          >Genomic-neighbor edges indicate similarity, not direct transmission.
+          Phylogenetic geometry is deferred; inspect Newick trees in the
+          existing tree viewer.</small
+        >
+      </p>
+    </main>
+  </body>
+</html>

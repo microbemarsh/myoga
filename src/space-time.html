@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; worker-src blob:; connect-src 'none';"
+    />
+    <title>myoga · Space-time observations</title>
+    <style>
+      :root {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        color: #18332f;
+        background: #edf2ef;
+        font-size: 14px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      header {
+        padding: 18px 24px;
+        background: #163c34;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      header strong {
+        font-size: 23px;
+        font-weight: 650;
+        letter-spacing: -0.5px;
+      }
+      header span {
+        color: #bdd3c7;
+      }
+      button,
+      select,
+      input {
+        font: inherit;
+        accent-color: #17674e;
+      }
+      button,
+      select,
+      input[type="number"],
+      input[type="search"] {
+        border: 1px solid #bdcdc5;
+        border-radius: 6px;
+        padding: 7px;
+        background: white;
+        color: #18332f;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:hover {
+        background: #e1eee6;
+      }
+      button:focus-visible,
+      select:focus-visible,
+      input:focus-visible {
+        outline: 3px solid #bf7c17;
+        outline-offset: 2px;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 310px;
+        gap: 1px;
+        background: #cbd8d0;
+      }
+      #view {
+        background: white;
+        min-width: 0;
+      }
+      #plot {
+        height: calc(100vh - 220px);
+        min-height: 480px;
+        width: 100%;
+      }
+      aside {
+        background: #f8faf8;
+        padding: 18px;
+        overflow: auto;
+        max-height: calc(100vh - 80px);
+      }
+      h2 {
+        font-size: 14px;
+        letter-spacing: 0.04em;
+        margin: 4px 0 14px;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        color: #496157;
+        margin: 10px 0;
+      }
+      label select,
+      label input:not([type="checkbox"]) {
+        display: block;
+        width: 100%;
+        margin-top: 5px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .row label {
+        flex: 1;
+        min-width: 75px;
+      }
+      .row button {
+        flex: 1;
+      }
+      section.controls {
+        border-top: 1px solid #d5dfd8;
+        margin-top: 18px;
+        padding-top: 16px;
+      }
+      .timeline {
+        padding: 10px 24px;
+        border-top: 1px solid #d5dfd8;
+      }
+      .timeline input[type="range"] {
+        width: 100%;
+      }
+      #clock {
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+      }
+      .note {
+        font-size: 12px;
+        line-height: 1.5;
+        color: #53675d;
+      }
+      .status {
+        padding: 10px 24px;
+        font-size: 12px;
+        background: #e4eee7;
+      }
+      #legend {
+        max-height: 200px;
+        overflow: auto;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+      #legend button {
+        text-align: left;
+        padding: 5px;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      #legend button[aria-pressed="true"] {
+        border: 2px solid #17674e;
+        background: #e1eee6;
+      }
+      .swatch {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 7px;
+      }
+      details {
+        margin-top: 14px;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      #details dl {
+        display: grid;
+        grid-template-columns: minmax(90px, 1fr) 1.5fr;
+        gap: 7px;
+        font-size: 12px;
+      }
+      dt {
+        color: #53675d;
+        overflow-wrap: anywhere;
+      }
+      dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      #error {
+        color: #872b22;
+        background: #fff0ec;
+        padding: 12px;
+        white-space: pre-wrap;
+      }
+      #error:empty {
+        display: none;
+      }
+      #show-controls {
+        display: none;
+      }
+      .figure-mode aside,
+      .figure-mode .timeline,
+      .figure-mode header,
+      .figure-mode .status {
+        display: none;
+      }
+      .figure-mode main {
+        display: block;
+      }
+      .figure-mode #plot {
+        height: 100vh;
+      }
+      .figure-mode #show-controls {
+        display: block;
+        position: fixed;
+        right: 12px;
+        top: 12px;
+        z-index: 10;
+      }
+      #filter-list .row {
+        align-items: end;
+      }
+      #filter-list .row select {
+        max-width: 210px;
+      }
+      .file {
+        font-size: 12px;
+      }
+      footer {
+        padding: 8px 24px;
+        font-size: 11px;
+        color: #60756b;
+      }
+      @media (max-width: 850px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+        aside {
+          max-height: none;
+        }
+        #plot {
+          height: 65vh;
+          min-height: 400px;
+        }
+        header {
+          align-items: start;
+          flex-direction: column;
+        }
+        .timeline {
+          padding: 12px;
+        }
+        aside {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+          gap: 18px;
+        }
+        section.controls {
+          margin-top: 0;
+        }
+      }
+      @media print {
+        aside,
+        .timeline,
+        header,
+        .status,
+        footer,
+        #show-controls {
+          display: none;
+        }
+        main {
+          display: block;
+        }
+        #plot {
+          height: 90vh;
+        }
+      }
+    </style>
+    <!--PLOTLY-->
+  </head>
+  <body>
+    <header>
+      <div><strong>myoga</strong> <span> / SPACE–TIME</span></div>
+      <span id="view-description"
+        >Observed geography · collection time · genomic similarity</span
+      >
+    </header>
+    <div id="error" role="alert"></div>
+    <main>
+      <div id="view">
+        <div
+          id="plot"
+          role="img"
+          aria-label="Interactive three-dimensional geographic-time observations. Drag to rotate; use the toolbar to pan and zoom."
+        ></div>
+        <div class="status" id="status" aria-live="polite"></div>
+        <div class="timeline">
+          <div class="row">
+            <strong id="clock">Full sampled history</strong
+            ><span class="note" id="date-range"></span>
+          </div>
+          <label
+            >Playback position<input
+              id="cursor"
+              type="range"
+              min="0"
+              max="1000"
+              value="1000"
+              step="1"
+          /></label>
+          <div class="row">
+            <button id="play">▶ Play</button><button id="pause">Pause</button
+            ><button id="reset">Reset</button
+            ><button id="full">Full history</button>
+            <label
+              >History<select id="history">
+                <option value="retain">Retain previous</option>
+                <option value="window">Current window</option>
+                <option value="fade">Fade previous</option>
+              </select></label
+            >
+            <label
+              >Speed<select id="speed">
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="2">2×</option>
+                <option value="5">5×</option>
+              </select></label
+            >
+            <label
+              >Window (days)<input
+                id="window"
+                type="number"
+                min="1"
+                max="3652500"
+                value="30"
+            /></label>
+          </div>
+        </div>
+      </div>
+      <aside aria-label="Visualization controls">
+        <section id="community-controls" hidden>
+          <h2>MICROBIAL COMMUNITY</h2>
+          <p id="community-summary" class="note"></p>
+          <label
+            >Minimum abundance (% of all fragments)<input
+              id="abundance-threshold"
+              type="range"
+              min="0"
+              max="100"
+              step="any"
+              value="1"
+          /></label>
+          <label
+            >Exact threshold (%)<input
+              id="abundance-value"
+              type="number"
+              min="0"
+              max="100"
+              step="any"
+              value="1"
+          /></label>
+          <label
+            ><input id="abundance-size" type="checkbox" checked /> Point area
+            represents abundance</label
+          >
+          <p class="note">
+            Each colored point is one taxon in one sample. Gray anchors mark
+            true sample locations and dates; offsets are schematic.
+            Below-threshold taxa remain in sample details. A missing report is
+            missing data, not zero abundance. Percentages are Kraken
+            classification proportions, not absolute microbial concentrations.
+          </p>
+        </section>
+        <section>
+          <h2>OBSERVATIONS</h2>
+          <label>Color by<select id="color"></select></label>
+          <label
+            >Find a legend category<input
+              type="search"
+              id="legend-search"
+              placeholder="Filter categories"
+          /></label>
+          <div id="legend" aria-label="Click a category to isolate it"></div>
+          <p class="note">
+            Click a category to isolate it; click again to restore. Colors are
+            stable across runs; large category sets can share colors.
+          </p>
+          <label
+            >Additional tooltip field<select id="tooltip-field"></select
+          ></label>
+          <details>
+            <summary>Combine metadata filters</summary>
+            <div id="filter-list"></div>
+            <label>Add filter<select id="filter-column"></select></label
+            ><button id="add-filter">Add filter</button
+            ><button id="clear-filters">Clear all</button>
+          </details>
+        </section>
+        <section class="controls">
+          <h2>SPACE &amp; TIME</h2>
+          <div class="row">
+            <button id="oblique">Oblique</button
+            ><button id="top">Top down</button
+            ><button id="side">Temporal</button>
+          </div>
+          <label
+            >Time-axis labels<select id="time-scale">
+              <option value="linear">
+                Automatic dates (linear elapsed time)
+              </option>
+              <option value="year">Years</option>
+              <option value="month">Months</option>
+              <option value="day">Days</option>
+            </select></label
+          >
+          <label
+            >Time-axis height<input
+              id="height"
+              type="range"
+              min="0.2"
+              max="3"
+              step="0.1"
+              value="1.2"
+          /></label>
+          <label
+            ><input id="basemap" type="checkbox" checked /> Geographic base
+            &amp; sampled sites</label
+          >
+          <label
+            ><input id="uncertainty" type="checkbox" checked /> Date-uncertainty
+            intervals</label
+          >
+          <label
+            ><input id="jitter" type="checkbox" checked /> Separate
+            repeated-site observations</label
+          >
+          <p class="note">
+            Display offsets are schematic, not movement or spatial uncertainty.
+            Details retain original coordinates. Equirectangular projection at
+            the dataset’s central latitude; not for measuring distances.
+          </p>
+        </section>
+        <section class="controls" id="genomic-controls">
+          <h2>GENOMIC CONNECTIONS</h2>
+          <label
+            >Connections<select id="connections">
+              <option value="none">None</option>
+              <option value="genomic">Genomic neighbors</option>
+              <option disabled>Phylogenetic geometry — deferred</option>
+            </select></label
+          >
+          <label id="threshold-label"
+            >Distance threshold<input
+              id="threshold"
+              type="range"
+              min="0"
+              max="1"
+              step="any"
+              value="0" /></label
+          ><output id="threshold-value"></output>
+          <label
+            ><input id="edge-opacity" type="checkbox" checked /> Fade edges with
+            larger distances</label
+          >
+          <p class="note" id="edge-note"></p>
+          <p class="note">
+            Genomic-neighbor connections represent genomic similarity between
+            observations and should not be interpreted as direct transmission
+            events.
+          </p>
+        </section>
+        <section class="controls">
+          <h2>FIGURE &amp; REPRODUCIBILITY</h2>
+          <div class="row">
+            <label
+              >Width (px)<input
+                id="export-width"
+                type="number"
+                min="400"
+                max="6000"
+                value="2400" /></label
+            ><label
+              >Height (px)<input
+                id="export-height"
+                type="number"
+                min="400"
+                max="6000"
+                value="1600"
+            /></label>
+          </div>
+          <label
+            >Background<select id="background">
+              <option value="white">White</option>
+              <option value="transparent">Transparent</option>
+            </select></label
+          >
+          <div class="row">
+            <button id="png">Export PNG</button
+            ><button id="svg">Export SVG</button>
+          </div>
+          <p class="note">
+            SVG embeds the WebGL scene as a raster; axes and legend are
+            retained. Exports exclude controls.
+          </p>
+          <button id="hide-controls">Hide controls</button>
+          <div class="row">
+            <button id="save-settings">Export settings</button
+            ><label class="file"
+              >Load settings<input
+                id="load-settings"
+                type="file"
+                accept=".json,application/json"
+            /></label>
+          </div>
+          <details>
+            <summary>Validation report</summary>
+            <pre id="report"></pre>
+            <button id="save-report">Export report</button>
+          </details>
+        </section>
+        <section class="controls" id="details">
+          <h2>SELECTED OBSERVATION</h2>
+          <label
+            >Find / select sample<input
+              id="sample-search"
+              type="search"
+              placeholder="Sample ID" /></label
+          ><select
+            id="sample-select"
+            aria-label="Select observation for metadata"
+          ></select>
+          <p class="note">
+            Click a point or select a sample to inspect all metadata, including
+            coordinate uncertainty when supplied.
+          </p>
+          <dl id="sample-details"></dl>
+        </section>
+      </aside>
+    </main>
+    <button id="show-controls">Show controls</button>
+    <footer>
+      Temporal midpoints are display anchors, not exact collection dates.
+      Playback includes intervals that overlap the selected period. No
+      transmission or ancestral locations are inferred.
+      <!--LICENSES-->
+    </footer>
+    <!--DATA-->
+    <!--GEOGRAPHY-->
+    <!--APP-->
+  </body>
+</html>

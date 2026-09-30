@@ -1,0 +1,7 @@
+10.00	100	100	U	0	unclassified
+90.00	900	0	R	1	root
+90.00	900	100	D	2	  Bacteria
+10.00	100	50	G	100001	    Synthetic genus A
+5.00	50	50	S	100011	      Synthetic species A
+70.00	700	0	G	100002	    Synthetic genus B
+70.00	700	700	S	100021	      Synthetic species B

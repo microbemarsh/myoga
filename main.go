@@ -11,6 +11,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -21,6 +22,16 @@ import (
 var appFiles embed.FS
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "space-time" {
+		if err := runSpaceTime(os.Args[2:], os.Stdout); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return
+			}
+			log.Print(err)
+			os.Exit(1)
+		}
+		return
+	}
 	host := flag.String("host", "127.0.0.1", "host interface for the local myoga server")
 	port := flag.String("port", "0", "port for the local myoga server; 0 chooses an available port")
 	noBrowser := flag.Bool("no-browser", false, "start the local server without opening a browser")
@@ -71,6 +82,10 @@ func staticHandler() http.Handler {
 	fileServer := http.FileServer(http.FS(content))
 
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if strings.HasPrefix(request.URL.Path, "/space-time") {
+			serveSpaceTime(response, request)
+			return
+		}
 		if request.URL.Path == "/" || request.URL.Path == "/index.html" {
 			index, err := appFiles.ReadFile("index.html")
 			if err != nil {

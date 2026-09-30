@@ -1,0 +1,6 @@
+sample_id	latitude	longitude	collection_date	site	kraken_report	data_type
+S01	44.30	-76.10	2024-06-01	Synthetic upstream		SYNTHETIC
+S02	44.30	-76.10	2025-06-01	Synthetic upstream		SYNTHETIC
+S03	45.50	-73.50	2024-06-02	Synthetic downstream	station_B_June.report.txt	SYNTHETIC
+S04	45.50	-73.50	2025-06-02	Synthetic downstream		SYNTHETIC
+S05	46.00	-73.00	2025-06-03	Synthetic missing-report site		SYNTHETIC
