@@ -31,7 +31,7 @@
         </label>
         <label class="file-picker">
           <span>GeoJSON</span>
-          <input id="geojsonFile" type="file" accept=".geojson,.json,application/geo+json,application/json">
+          <input id="geojsonFile" type="file" multiple accept=".geojson,.json,application/geo+json,application/json">
         </label>
         <button id="loadExample" type="button" title="Load a tiny built-in example">Example</button>
         <a href="/space-time" style="color:inherit">Space-time ↗</a>
@@ -50,7 +50,22 @@
         </section>
 
         <section>
-          <h2>Columns</h2>
+          <h2>Collection time</h2>
+          <label>Show<select id="timeMode"><option value="all">All dates</option><option value="cumulative">History through cursor</option><option value="window">Window ending at cursor</option></select></label>
+          <label>Collection-date cursor <output id="timeLabel" for="timeCursor">No usable dates</output><input id="timeCursor" type="range" min="0" max="0" step="1" value="0" disabled></label>
+          <label id="timeWindowLabel" hidden>Window (days)<input id="timeWindow" type="number" min="1" max="3652500" value="30"></label>
+          <div class="button-row"><button id="playTime" type="button" disabled>Play</button><button id="allDates" type="button">All dates</button></div>
+          <p class="status-text">Intervals overlap the window; coarse dates are not exact events. Undated samples appear in All dates. Playback shows collection history, not transmission.</p>
+        </section>
+        <section>
+          <h2>Current selection</h2>
+          <p id="selectionSummary" class="status-text" aria-live="polite">Load samples to begin.</p>
+          <div class="button-row"><button id="focusSelection" type="button">Focus selection</button><button id="allSamples" type="button">All samples</button></div>
+          <button id="clearClade" type="button" hidden>Clear clade selection</button>
+          <p class="status-text">Click a tree branch to select its descendants. Filters and time further narrow that selection.</p>
+        </section>
+        <section>
+          <details><summary>Columns</summary>
           <label>ID<select id="idColumn"></select></label>
           <label>Latitude<select id="latColumn"></select></label>
           <label>Longitude<select id="lonColumn"></select></label>
@@ -62,6 +77,7 @@
             Tree clade depth <output id="treeCladeDepthValue" for="treeCladeDepth">10%</output>
             <input id="treeCladeDepth" type="range" min="0" max="100" step="1" value="10">
           </label>
+          </details>
         </section>
 
         <section>
@@ -74,6 +90,23 @@
             <button id="exportGeojson" type="button">GeoJSON</button>
             <button id="exportSession" type="button">Session JSON</button>
           </div>
+        </section>
+
+        <section>
+          <details><summary>Geography overlays</summary>
+          <div id="layerList" class="status-text">Add local polygon GeoJSON using the picker above.</div>
+          </details>
+        </section>
+        <section>
+          <details><summary>Named views</summary>
+          <label>Name<input id="viewName" type="text" maxlength="100" placeholder="e.g. First collection period"></label>
+          <button id="saveView" type="button">Save current view</button>
+          <label>Saved views<select id="savedViews"><option value="">Choose a view</option></select></label>
+          <div class="button-row"><button id="restoreView" type="button">Restore</button><button id="deleteView" type="button">Delete view</button></div>
+          <button id="exportReview" type="button">Export review file</button>
+          <label>Load review file<input id="importReview" type="file" accept=".json,application/json"></label>
+          <p class="status-text">Views and notes stay in memory until exported. Load the same dataset before importing a review. Review files include notes and geography.</p>
+          </details>
         </section>
 
         <p id="statusText" class="status-text">Load local files to begin.</p>
@@ -104,7 +137,7 @@
           <button id="toggleTree" class="panel-toggle panel-toggle-tree" type="button" title="Hide tree">⌄</button>
         </header>
         <div id="treeScroll" class="tree-scroll">
-          <svg id="treeSvg" role="img" aria-label="Phylogenetic tree"></svg>
+          <svg id="treeSvg" role="group" aria-label="Phylogenetic tree"></svg>
         </div>
       </section>
 
@@ -117,6 +150,10 @@
           <h1 id="detailTitle"></h1>
           <p id="detailSubtitle"></p>
           <dl id="detailBasics" class="detail-basics"></dl>
+          <p id="selectionVisibility" class="status-text"></p>
+          <button id="focusSample" type="button">Focus this sample</button>
+          <label>Review note<textarea id="sampleNote" rows="4" maxlength="10000" placeholder="Notes about this sample"></textarea></label>
+          <p class="status-text">Included in the exported review file.</p>
           <h2>Metadata</h2>
           <div id="metadataTable" class="metadata-table"></div>
         </div>

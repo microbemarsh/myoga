@@ -17,7 +17,7 @@
   const LON_COLUMNS = ["longitude", "lon", "lng", "long", "decimal_longitude", "decimal_lon", "decimal_lng", "x"];
   const LAT_LON_COLUMNS = ["lat_lon", "latitude_longitude", "coordinates", "coord", "gps", "geographic_coordinates"];
   const LOCATION_COLUMNS = ["location", "geo_loc_name", "geographic_location", "country", "region", "place"];
-  const DATE_COLUMNS = ["collection_date", "date", "sample_date", "isolation_date", "collection"];
+  const DATE_COLUMNS = ["collection_date_raw", "collection_date", "date", "sample_date", "isolation_date", "collection", "collection_year", "collection_date_start"];
 
   const COUNTRY_CENTROIDS = {
     Argentina: [-63.62, -38.42], Australia: [133.78, -25.27], Bangladesh: [90.36, 23.68],
@@ -61,12 +61,121 @@
     [[-180, -62], [180, -62], [180, -86], [-180, -86]]
   ];
 
+  const DAY_MS = 86400000;
+
+  // Match the space-time importer's UTC interval semantics in the browser.
+  function dateInterval(value) {
+    const raw = String(value || "").trim();
+    const range = raw.match(/^(\d{4})\s*-\s*(\d{4})$/) || raw.match(/^(.+?)(?:\/|\.\.)(.+)$/);
+    if (range) {
+      const a = dateInterval(range[1]), b = dateInterval(range[2]);
+      return a && b && a.start <= b.end ? { start: a.start, end: b.end } : null;
+    }
+    if (!/^(?!0000)\d{4}(?:-\d{2}(?:-\d{2})?)?$/.test(raw)) return null;
+    const iso = raw.length === 4 ? `${raw}-01-01` : raw.length === 7 ? `${raw}-01` : raw;
+    const start = Date.parse(`${iso}T00:00:00Z`);
+    if (!Number.isFinite(start) || new Date(start).toISOString().slice(0, 10) !== iso) return null;
+    const end = new Date(start);
+    if (raw.length === 4) end.setUTCFullYear(end.getUTCFullYear() + 1);
+    if (raw.length === 7) end.setUTCMonth(end.getUTCMonth() + 1);
+    return { start: start / DAY_MS, end: (Number(end) - (raw.length < 10 ? DAY_MS : 0)) / DAY_MS };
+  }
+
+  function sampleInterval(row, column) {
+    if (!column) return null;
+    const get = (key) => cleanValue(row[Object.keys(row).find((h) => normalizeHeader(h) === normalizeHeader(key))]);
+    const standard = [...DATE_COLUMNS, "collection_date_start", "collection_date_end"].some((h) => normalizeHeader(h) === normalizeHeader(column));
+    if (standard && get("collection_date_valid").toLowerCase() === "false") return null;
+    const start = standard && get("collection_date_start"), end = standard && get("collection_date_end");
+    let interval;
+    if (start || end) {
+      const a = dateInterval(start), b = dateInterval(end);
+      if (!a || !b || a.start > b.end) return null;
+      interval = { start: a.start, end: b.end };
+    } else interval = dateInterval(row[column]);
+    if (!interval) return null;
+    const precision = standard && get("collection_date_precision").toLowerCase();
+    if (precision === "year" || precision === "month") {
+      const length = precision === "year" ? 4 : 7;
+      interval = { start: dateInterval(formatDay(interval.start).slice(0, length)).start,
+        end: dateInterval(formatDay(interval.end).slice(0, length)).end };
+    }
+    if ((precision === "day" || precision === "exact") && interval.start !== interval.end) return null;
+    return interval;
+  }
+
+  function formatDay(day) { return new Date(day * DAY_MS).toISOString().slice(0, 10); }
+
+  function withinTime(interval, mode, cursor, windowDays) {
+    if (mode === "all") return true;
+    return Boolean(interval && interval.start <= cursor && (mode === "cumulative" || interval.end >= cursor - windowDays + 1));
+  }
+
+  function selectionSummary(genomes) {
+    const dated = genomes.filter((g) => g.interval);
+    const sites = new Set(genomes.filter((g) => isMapped(g) && !g.isCentroid).map((g) => `${g.longitude},${g.latitude}`));
+    let start = Infinity, end = -Infinity;
+    for (const g of dated) { start = Math.min(start, g.interval.start); end = Math.max(end, g.interval.end); }
+    return `${genomes.length} samples · ${sites.size} distinct recorded coordinate pairs · ${genomes.filter((g) => g.isCentroid).length} country-centroid locations. ` +
+      (dated.length ? `Collection-date coverage ${formatDay(start)} — ${formatDay(end)}. ` : "No usable collection dates. ") +
+      `${genomes.length - dated.length} missing/invalid dates · ${genomes.filter((g) => !isMapped(g)).length} unmapped · ${genomes.filter((g) => !g.matchedMetadata).length} without metadata.`;
+  }
+
+  function validBounds(b) {
+    return b === null || (b && [b.minLon, b.maxLon, b.minLat, b.maxLat].every(Number.isFinite) &&
+      b.minLon >= -180 && b.maxLon <= 180 && b.minLat >= -90 && b.maxLat <= 90 && b.minLon < b.maxLon && b.minLat < b.maxLat);
+  }
+
+  function validateReview(data, fingerprint, headers, tipNames, sampleIds) {
+    const fail = () => { throw Error("Invalid review file or dataset mismatch."); };
+    const text = (v, max = 10000) => typeof v === "string" && v.length <= max;
+    const number = (v, min, max) => Number.isFinite(v) && v >= min && v <= max;
+    if (!data || data.version !== 1 || data.fingerprint !== fingerprint || !Array.isArray(data.views) || data.views.length > 100 ||
+        !Array.isArray(data.layers) || data.layers.length > 20 || !Array.isArray(data.notes) || data.notes.length > sampleIds.size) fail();
+    const layerNames = new Set();
+    for (const layer of data.layers) {
+      if (!layer || !text(layer.name, 255) || !layer.name || layerNames.has(layer.name) || typeof layer.visible !== "boolean" ||
+          !Array.isArray(layer.rings) || !layer.rings.length || !layer.rings.every((r) => Array.isArray(r) && r.length >= 4 && r.every((p) =>
+            Array.isArray(p) && p.length === 2 && number(p[0], -180, 180) && number(p[1], -90, 90)))) fail();
+      layerNames.add(layer.name);
+    }
+    const names = new Set();
+    for (const v of data.views) {
+      if (!v || !text(v.name, 100) || !v.name || names.has(v.name) || !v.columns ||
+          !["id", "lat", "lon", "latLon", "location", "date", "color"].every((k) => typeof v.columns[k] === "string" &&
+            (v.columns[k] === "" || headers.includes(v.columns[k]) || (k === "color" && v.columns[k] === TREE_CLADE_COLOR))) ||
+          !text(v.search) || !(v.filterColumn === "" || headers.includes(v.filterColumn)) || !text(v.filterValue) ||
+          typeof v.mappedOnly !== "boolean" || !["all", "cumulative", "window"].includes(v.timeMode) ||
+          !number(v.cursor, -719162, 2932896) || !number(v.windowDays, 1, 3652500) ||
+          !number(v.treeCladeDepth, 0, 1) || !["original", "midpoint"].includes(v.treeRooting) || !["globe", "flat"].includes(v.mapMode) ||
+          !number(v.mapZoom, .72, v.mapMode === "globe" ? MAX_GLOBE_ZOOM : MAX_FLAT_ZOOM) ||
+          !number(v.rotationLon, -180, 180) || !number(v.rotationLat, -90, 90) ||
+          !number(v.flatPanX, -1e7, 1e7) || !number(v.flatPanY, -1e7, 1e7) || !validBounds(v.viewBounds) ||
+          !Array.isArray(v.layers) || !v.layers.every((n) => layerNames.has(n)) ||
+          !(v.tips === null || (Array.isArray(v.tips) && v.tips.every((t) => tipNames.has(t)))) ||
+          !(v.selectedId === "" || sampleIds.has(v.selectedId))) fail();
+      names.add(v.name);
+    }
+    const noteIds = new Set();
+    for (const note of data.notes) {
+      if (!Array.isArray(note) || note.length !== 2 || !sampleIds.has(note[0]) || noteIds.has(note[0]) || !text(note[1])) fail();
+      noteIds.add(note[0]);
+    }
+    return data;
+  }
+
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { dateInterval, sampleInterval, withinTime, selectionSummary, validateReview, parseNewick, flattenTips };
+    return;
+  }
+
   const state = {
     ggrIds: new Set(),
     datasetKind: "generic",
     datasetLabel: "relatedness tree",
     treeText: "",
     treeRoot: null,
+    treeRooting: "original",
     treeTips: [],
     metadata: { headers: [], rows: [] },
     columnMap: {},
@@ -81,9 +190,18 @@
     worldRings: [],
     worldGlobeRings: [],
     worldMapLoaded: false,
-    customMapName: "",
-    customRings: [],
-    customBounds: null,
+    layers: [],
+    viewBounds: null,
+    tips: null,
+    notes: new Map(),
+    views: [],
+    reviewDataset: "",
+    reviewSessions: new Map(),
+    dirtyReviews: new Set(),
+    reviewRevision: 0,
+    timeMin: 0,
+    timeMax: 0,
+    timer: null,
     mapMode: "globe",
     rotationLon: -40,
     rotationLat: 14,
@@ -152,7 +270,29 @@
     detailTitle: byId("detailTitle"),
     detailSubtitle: byId("detailSubtitle"),
     detailBasics: byId("detailBasics"),
-    metadataTable: byId("metadataTable")
+    metadataTable: byId("metadataTable"),
+    timeMode: byId("timeMode"),
+    timeCursor: byId("timeCursor"),
+    timeLabel: byId("timeLabel"),
+    timeWindow: byId("timeWindow"),
+    timeWindowLabel: byId("timeWindowLabel"),
+    playTime: byId("playTime"),
+    allDates: byId("allDates"),
+    selectionSummary: byId("selectionSummary"),
+    focusSelection: byId("focusSelection"),
+    allSamples: byId("allSamples"),
+    clearClade: byId("clearClade"),
+    layerList: byId("layerList"),
+    viewName: byId("viewName"),
+    saveView: byId("saveView"),
+    savedViews: byId("savedViews"),
+    restoreView: byId("restoreView"),
+    deleteView: byId("deleteView"),
+    exportReview: byId("exportReview"),
+    importReview: byId("importReview"),
+    sampleNote: byId("sampleNote"),
+    focusSample: byId("focusSample"),
+    selectionVisibility: byId("selectionVisibility")
   };
 
   drawMap();
@@ -170,7 +310,8 @@
     el.ggrFile.addEventListener("change", () => readGgr(el.ggrFile.files[0]));
     el.treeFile.addEventListener("change", () => readTree(el.treeFile.files[0]));
     el.metadataFile.addEventListener("change", () => readMetadata(el.metadataFile.files[0]));
-    el.geojsonFile.addEventListener("change", () => readCustomGeoJson(el.geojsonFile.files[0]));
+    el.geojsonFile.addEventListener("change", () => readCustomGeoJson(el.geojsonFile.files));
+    bindReviewEvents();
     el.loadExample.addEventListener("click", loadExample);
     for (const node of [el.idColumn, el.latColumn, el.lonColumn, el.latLonColumn, el.locationColumn, el.dateColumn, el.colorColumn]) {
       node.addEventListener("change", () => {
@@ -231,6 +372,234 @@
     el.originalRootTree.addEventListener("click", restoreOriginalTreeRoot);
   }
 
+  function bindReviewEvents() {
+    el.timeMode.onchange = () => { stopPlayback(); applyFilters(); };
+    el.timeCursor.oninput = () => {
+      stopPlayback();
+      if (el.timeMode.value === "all") el.timeMode.value = "cumulative";
+      applyFilters();
+    };
+    el.timeWindow.onchange = () => {
+      el.timeWindow.value = String(clamp(Math.round(Number(el.timeWindow.value) || 30), 1, 3652500));
+      applyFilters();
+    };
+    el.allDates.onclick = () => { stopPlayback(); el.timeMode.value = "all"; applyFilters(); };
+    el.playTime.onclick = () => {
+      if (state.timer !== null) { stopPlayback(); return; }
+      if (el.timeMode.value === "all") el.timeMode.value = "cumulative";
+      if (Number(el.timeCursor.value) >= state.timeMax) el.timeCursor.value = String(state.timeMin);
+      el.playTime.textContent = "Pause";
+      el.selectionSummary.setAttribute("aria-live", "off");
+      applyFilters();
+      // ponytail: cap playback at ~4 redraws/second; large trees may need incremental rendering later.
+      const step = Math.max(1, Math.ceil((state.timeMax - state.timeMin) / 120));
+      state.timer = setInterval(() => {
+        el.timeCursor.value = String(Math.min(state.timeMax, Number(el.timeCursor.value) + step));
+        applyFilters();
+        if (Number(el.timeCursor.value) >= state.timeMax) stopPlayback();
+      }, 250);
+    };
+    el.focusSelection.onclick = () => focusGenomes(state.filtered);
+    el.focusSample.onclick = () => focusGenomes(state.genomes.filter((g) => g.id === state.selectedId));
+    el.clearClade.onclick = () => { state.tips = null; applyFilters(); };
+    el.allSamples.onclick = () => {
+      stopPlayback(); state.tips = null;
+      el.searchBox.value = ""; el.filterColumn.value = ""; refreshFilterValues();
+      el.mappedOnly.checked = false; el.timeMode.value = "all";
+      applyFilters(); resetMapView();
+    };
+    el.sampleNote.oninput = () => {
+      if (!state.selectedId) return;
+      if (el.sampleNote.value) state.notes.set(state.selectedId, el.sampleNote.value);
+      else state.notes.delete(state.selectedId);
+      markReviewDirty();
+    };
+    el.saveView.onclick = () => {
+      const name = el.viewName.value.trim();
+      if (!name || !state.genomes.length) { setStatus("Load samples and enter a view name first."); return; }
+      if (state.views.some((v) => v.name === name)) { setStatus("That view name exists. Choose another name or delete the old view."); return; }
+      if (state.views.length >= 100) { setStatus("At most 100 named views can be saved."); return; }
+      state.views.push(captureView(name)); markReviewDirty(); renderViews(); el.savedViews.value = name;
+      setStatus(`Saved “${name}” in memory. Export a review file to keep it after closing.`);
+    };
+    el.restoreView.onclick = () => {
+      const view = state.views.find((v) => v.name === el.savedViews.value);
+      if (view) restoreView(view);
+    };
+    el.deleteView.onclick = () => {
+      const index = state.views.findIndex((v) => v.name === el.savedViews.value);
+      if (index >= 0) { state.views.splice(index, 1); markReviewDirty(); }
+      renderViews();
+    };
+    el.exportReview.onclick = exportReview;
+    el.importReview.onchange = importReview;
+    window.addEventListener("beforeunload", (event) => {
+      if (state.dirtyReviews.size) {
+        event.preventDefault(); event.returnValue = "";
+      }
+    });
+  }
+
+  function markReviewDirty() {
+    state.dirtyReviews.add(state.reviewDataset); state.reviewRevision += 1;
+  }
+
+  function stopPlayback() {
+    clearInterval(state.timer); state.timer = null; el.playTime.textContent = "Play";
+    el.selectionSummary.setAttribute("aria-live", "polite");
+  }
+
+  function updateTimeline() {
+    let min = Infinity, max = -Infinity;
+    for (const g of state.genomes) if (g.interval) { min = Math.min(min, g.interval.start); max = Math.max(max, g.interval.end); }
+    const usable = Number.isFinite(min);
+    const previous = Number(el.timeCursor.value);
+    const changed = min !== state.timeMin || max !== state.timeMax;
+    state.timeMin = usable ? min : 0; state.timeMax = usable ? max : 0;
+    el.timeCursor.min = String(state.timeMin); el.timeCursor.max = String(state.timeMax);
+    el.timeCursor.value = String(changed ? state.timeMax : clamp(previous, state.timeMin, state.timeMax));
+    el.timeCursor.disabled = !usable;
+    el.playTime.disabled = !usable || min === max;
+    if (changed || !usable) { stopPlayback(); el.timeMode.value = "all"; }
+  }
+
+  function resetReviewForDataset() {
+    const key = JSON.stringify([state.treeText, state.metadata]);
+    if (state.reviewDataset === key) return;
+    if (state.reviewDataset) state.reviewSessions.set(state.reviewDataset, { views: state.views, notes: state.notes, layers: state.layers });
+    const hadDataset = Boolean(state.reviewDataset);
+    state.reviewDataset = key;
+    const previous = state.reviewSessions.get(key);
+    state.views = previous?.views || []; state.notes = previous?.notes || new Map();
+    if (hadDataset) state.layers = previous?.layers || [];
+    renderLayers();
+    state.tips = null; stopPlayback(); el.timeMode.value = "all";
+    state.selectedId = ""; el.detailContent.hidden = true; el.detailEmpty.hidden = false;
+    el.searchBox.value = ""; el.filterColumn.value = ""; el.mappedOnly.checked = false;
+    renderViews();
+  }
+
+  function focusGenomes(genomes) {
+    const mapped = genomes.filter(isMapped);
+    if (!mapped.length) { setStatus("No mapped samples in this selection."); return; }
+    const lon = mapped.map((g) => g.longitude), lat = mapped.map((g) => g.latitude);
+    let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+    for (let i = 0; i < lon.length; i++) { minLon = Math.min(minLon, lon[i]); maxLon = Math.max(maxLon, lon[i]); minLat = Math.min(minLat, lat[i]); maxLat = Math.max(maxLat, lat[i]); }
+    if (maxLon - minLon > 180) {
+      // Keep dateline selections on the globe instead of stretching a flat map across its seam.
+      const x = lon.reduce((sum, v) => sum + Math.cos(radians(v)), 0), y = lon.reduce((sum, v) => sum + Math.sin(radians(v)), 0);
+      state.mapMode = "globe"; state.rotationLon = Math.atan2(y, x) * 180 / Math.PI;
+      state.rotationLat = (minLat + maxLat) / 2; state.mapZoom = 1;
+    } else {
+      const padding = Math.max(0.5, (maxLon - minLon) * .1, (maxLat - minLat) * .1);
+      state.viewBounds = { minLon: Math.max(-180, minLon - padding), maxLon: Math.min(180, maxLon + padding), minLat: Math.max(-90, minLat - padding), maxLat: Math.min(90, maxLat + padding) };
+      state.mapMode = "flat"; fitFlatBounds();
+    }
+    drawMap();
+  }
+
+  function renderLayers() {
+    el.layerList.replaceChildren();
+    if (!state.layers.length) el.layerList.textContent = "Add local polygon GeoJSON using the picker above.";
+    for (const layer of state.layers) {
+      const row = document.createElement("div"), label = html("label", "", "checkline"), toggle = document.createElement("input"), remove = html("button", "Remove");
+      toggle.type = "checkbox"; toggle.checked = layer.visible;
+      toggle.onchange = () => { layer.visible = toggle.checked; drawMap(); };
+      remove.type = "button"; remove.setAttribute("aria-label", `Remove ${layer.name}`);
+      remove.onclick = () => {
+        state.layers = state.layers.filter((l) => l !== layer);
+        for (const v of state.views) v.layers = v.layers.filter((name) => name !== layer.name);
+        if (state.views.length) markReviewDirty();
+        renderLayers(); drawMap();
+      };
+      label.append(toggle, document.createTextNode(layer.name)); row.append(label, remove); el.layerList.append(row);
+    }
+  }
+
+  function captureView(name) {
+    return {
+      name, columns: readColumnMap(), treeRooting: state.treeRooting, search: el.searchBox.value, filterColumn: el.filterColumn.value,
+      filterValue: el.filterValue.value, mappedOnly: el.mappedOnly.checked, timeMode: el.timeMode.value,
+      cursor: Number(el.timeCursor.value), windowDays: Number(el.timeWindow.value), treeCladeDepth: state.treeCladeDepth,
+      tips: state.tips ? [...state.tips] : null, selectedId: state.selectedId,
+      mapMode: state.mapMode, mapZoom: state.mapZoom, rotationLon: state.rotationLon, rotationLat: state.rotationLat,
+      flatPanX: state.flatPanX, flatPanY: state.flatPanY, viewBounds: state.viewBounds ? { ...state.viewBounds } : null,
+      layers: state.layers.filter((l) => l.visible).map((l) => l.name)
+    };
+  }
+
+  function renderViews() {
+    const selected = el.savedViews.value;
+    el.savedViews.replaceChildren(new Option("Choose a view", ""), ...state.views.map((v) => new Option(v.name, v.name)));
+    if (state.views.some((v) => v.name === selected)) el.savedViews.value = selected;
+  }
+
+  function restoreView(v) {
+    stopPlayback();
+    state.columnMap = { ...v.columns }; state.treeCladeDepth = v.treeCladeDepth;
+    if (state.treeText && state.treeRooting !== v.treeRooting) {
+      const root = parseNewick(state.treeText.trim());
+      state.treeRoot = v.treeRooting === "midpoint" ? midpointRootTree(root) : root;
+      state.treeTips = flattenTips(state.treeRoot); state.treeRooting = v.treeRooting;
+    }
+    populateColumnControls(); reconcile();
+    state.tips = v.tips ? new Set(v.tips) : null;
+    el.searchBox.value = v.search; el.filterColumn.value = v.filterColumn; refreshFilterValues(); el.filterValue.value = v.filterValue;
+    el.mappedOnly.checked = v.mappedOnly; el.timeMode.value = v.timeMode; el.timeCursor.value = String(v.cursor); el.timeWindow.value = String(v.windowDays);
+    for (const key of ["mapMode", "mapZoom", "rotationLon", "rotationLat", "flatPanX", "flatPanY", "viewBounds"]) state[key] = v[key];
+    for (const layer of state.layers) layer.visible = v.layers.includes(layer.name);
+    renderLayers(); applyFilters(); selectGenome(v.selectedId);
+    setStatus(`Restored “${v.name}”.`);
+  }
+
+  async function reviewFingerprint(key) {
+    const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
+    return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function exportReview() {
+    if (!state.genomes.length) { setStatus("Load samples before exporting a review."); return; }
+    try {
+      const key = state.reviewDataset;
+      const revision = state.reviewRevision;
+      const payload = JSON.parse(JSON.stringify({ version: 1, views: state.views, notes: [...state.notes], layers: state.layers }));
+      payload.fingerprint = await reviewFingerprint(key);
+      const serialized = JSON.stringify(payload, null, 2);
+      if (new Blob([serialized]).size > 64 * 1024 * 1024) throw Error("Review exceeds 64 MiB; remove large geography layers before exporting");
+      download("myoga-review.json", serialized, "application/json");
+      if (key === state.reviewDataset && revision === state.reviewRevision) state.dirtyReviews.delete(key);
+      setStatus("Exported named views, sample notes, and geography. Keep this review file with the original dataset.");
+    } catch (error) { setStatus(`Review export failed: ${error.message}`); }
+  }
+
+  async function importReview() {
+    try {
+      const file = el.importReview.files[0];
+      if (!file) return;
+      if (!state.genomes.length) throw Error("Load the original dataset first");
+      if (file.size > 64 * 1024 * 1024) throw Error("Review exceeds 64 MiB");
+      const key = state.reviewDataset;
+      const data = JSON.parse(await file.text());
+      const fingerprint = await reviewFingerprint(key);
+      if (key !== state.reviewDataset) throw Error("Dataset changed while reading the review; try again");
+      validateReview(data, fingerprint, state.metadata.headers, new Set(state.treeTips.map((t) => t.name)), new Set(state.genomes.map((g) => g.id)));
+      // Merge only non-conflicting review content, so importing cannot silently overwrite work.
+      if (data.views.some((v) => state.views.some((old) => old.name === v.name && JSON.stringify(old) !== JSON.stringify(v))) ||
+          data.notes.some(([id, note]) => state.notes.has(id) && state.notes.get(id) !== note) ||
+          data.layers.some((l) => state.layers.some((old) => old.name === l.name && JSON.stringify(old.rings) !== JSON.stringify(l.rings)))) {
+        throw Error("Review conflicts with current views, notes, or geography. Export your work and reopen the dataset in a fresh tab before importing");
+      }
+      const views = [...state.views, ...data.views.filter((v) => !state.views.some((old) => old.name === v.name))];
+      const layers = [...state.layers, ...data.layers.filter((l) => !state.layers.some((old) => old.name === l.name))];
+      if (views.length > 100 || layers.length > 20) throw Error("Combined review exceeds 100 views or 20 layers");
+      stopPlayback(); state.views = views; state.layers = layers;
+      for (const [id, note] of data.notes) state.notes.set(id, note);
+      renderViews(); renderLayers(); selectGenome(state.selectedId);
+      setStatus("Imported review. Choose a named view and Restore to return to it.");
+    } catch (error) { setStatus(`Review import failed: ${error.message}`); }
+    finally { el.importReview.value = ""; }
+  }
+
   function togglePanel(panel) {
     if (panel === "controls") state.controlsCollapsed = !state.controlsCollapsed;
     if (panel === "details") state.detailsCollapsed = !state.detailsCollapsed;
@@ -268,8 +637,9 @@
   function resetMapView() {
     state.rotationLon = -40;
     state.rotationLat = 14;
-    if (state.mapMode === "flat" && state.customBounds) {
-      fitFlatBounds(state.customBounds);
+    state.viewBounds = null;
+    if (state.mapMode === "flat") {
+      fitFlatBounds();
     } else {
       state.mapZoom = 1;
       state.flatPanX = 0;
@@ -352,6 +722,7 @@
   }
 
   function startTreeDrag(event) {
+    if (event.target.closest(".tree-label, .tree-node-dot, .tree-edge")) return;
     if (event.button !== undefined && event.button !== 0) return;
     state.treeDrag = {
       x: event.clientX,
@@ -437,6 +808,7 @@
       state.ggrIds = new Set();
       state.treeText = selected.treeText;
       state.treeRoot = selected.treeRoot;
+      state.treeRooting = "original";
       state.treeTips = selected.treeTips;
       state.metadata = selected.metadata;
       setDatasetSource("mlvamaps", selected.label);
@@ -503,7 +875,7 @@
   async function readTree(file) {
     if (!file) return;
     setStatus(`Reading ${file.name} locally.`);
-    state.treeText = await file.text();
+    const text = await file.text();
     const mlvamapsLabel = mlvamapsTreeLabel(file.name);
     if (mlvamapsLabel) {
       state.ggrIds = new Set();
@@ -513,7 +885,7 @@
     } else {
       setDatasetSource("generic", "relatedness tree");
     }
-    loadTreeText(state.treeText);
+    loadTreeText(text);
   }
 
   async function readMetadata(file) {
@@ -528,51 +900,49 @@
     loadMetadataText(await file.text());
   }
 
-  async function readCustomGeoJson(file) {
-    if (!file) return;
-    setStatus(`Reading ${file.name} locally.`);
-    try {
-      const collection = JSON.parse(await file.text());
-      const rings = geoJsonRings(collection);
-      const bounds = boundsForRings(rings);
-      if (!rings.length || !bounds) throw new Error("no Polygon or MultiPolygon coordinates found");
-      state.customMapName = file.name;
-      state.customRings = rings;
-      state.customBounds = bounds;
-      state.mapMode = "flat";
-      fitFlatBounds(bounds);
-      drawMap();
-      setStatus(`Loaded custom flat GeoJSON map ${file.name} with ${rings.length} polygon rings.`);
-    } catch (error) {
-      setStatus(`Custom GeoJSON failed: ${error.message}`);
+  async function readCustomGeoJson(files) {
+    for (const file of files) {
+      try {
+        if (file.size > 32 * 1024 * 1024) throw Error("GeoJSON exceeds 32 MiB");
+        addGeography(file.name, JSON.parse(await file.text()));
+      } catch (error) { setStatus(`Custom GeoJSON failed: ${error.message}`); }
     }
+    el.geojsonFile.value = "";
+  }
+
+  function addGeography(name, collection, preferredBounds) {
+    const rings = geoJsonRings(collection);
+    if (!rings.length || !rings.every((r) => r.length >= 4)) throw Error("No usable Polygon or MultiPolygon rings");
+    if (state.layers.some((l) => l.name === name)) throw Error("A layer with this name is already loaded; remove it before replacing it");
+    if (state.layers.length >= 20) throw Error("At most 20 geography layers can be loaded");
+    state.layers.push({ name, rings, visible: true });
+    state.mapMode = "flat";
+    state.viewBounds = preferredBounds || boundsForRings(rings);
+    fitFlatBounds();
+    renderLayers();
+    drawMap();
+    setStatus(`Added ${name} as a local geography overlay.`);
   }
 
   async function loadBundledFlatGeoJson(url, label, preferredBounds) {
-    setStatus(`Loading bundled ${label} GeoJSON.`);
+    const existing = state.layers.find((l) => l.name === label);
+    if (existing) {
+      existing.visible = !existing.visible;
+      renderLayers(); drawMap(); return;
+    }
     try {
       const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const collection = await response.json();
-      const rings = geoJsonRings(collection);
-      const bounds = boundsForRings(rings);
-      if (!rings.length || !bounds) throw new Error("no Polygon or MultiPolygon coordinates found");
-      state.customMapName = label;
-      state.customRings = rings;
-      state.customBounds = preferredBounds || bounds;
-      state.mapMode = "flat";
-      fitFlatBounds(bounds);
-      drawMap();
-      setStatus(`Loaded bundled ${label} flat map with ${rings.length} polygon rings.`);
-    } catch (error) {
-      setStatus(`Bundled ${label} GeoJSON failed: ${error.message}`);
-    }
+      if (!response.ok) throw Error(`HTTP ${response.status}`);
+      addGeography(label, await response.json(), preferredBounds);
+    } catch (error) { setStatus(`Bundled geography failed: ${error.message}`); }
   }
 
   function loadTreeText(text) {
     try {
       const firstTree = !state.treeRoot;
       state.treeRoot = parseNewick(text.trim());
+      state.treeText = text;
+      state.treeRooting = "original";
       state.treeTips = flattenTips(state.treeRoot);
       if (firstTree && state.metadata.headers.length) {
         state.columnMap.color = TREE_CLADE_COLOR;
@@ -593,6 +963,7 @@
     }
     try {
       state.treeRoot = midpointRootTree(parseNewick(state.treeText.trim()));
+      state.treeRooting = "midpoint";
       state.treeTips = flattenTips(state.treeRoot);
       reconcile();
       setStatus(`Midpoint-rooted tree with ${state.treeTips.length} tips.`);
@@ -751,11 +1122,13 @@
       state.genomes = state.metadata.rows.map((row, index) => buildGenome({ name: row[idColumn] || `row_${index + 1}` }, row, index));
     }
 
-    const extraRows = state.metadata.rows.filter((row) => !usedRows.has(row));
+    const extraRows = state.treeTips.length ? state.metadata.rows.filter((row) => !usedRows.has(row)) : [];
     for (const row of extraRows) {
       state.genomes.push(buildGenome({ name: row[idColumn] || `metadata_${state.genomes.length + 1}` }, row, state.genomes.length, true));
     }
 
+    resetReviewForDataset();
+    updateTimeline();
     updateTreeCladeControl();
     refreshFilterValues();
     applyFilters();
@@ -797,7 +1170,8 @@
       isCentroid: coords ? coords.centroid : false,
       location: coords ? coords.location : "",
       colorValue,
-      dateValue
+      dateValue,
+      interval: sampleInterval(row || {}, state.columnMap.date)
     };
   }
 
@@ -832,15 +1206,22 @@
     state.filterValue = filterValue;
     state.colorColumn = state.columnMap.color;
     state.filtered = state.genomes.filter((genome) => {
+      if (state.tips && !state.tips.has(genome.tipName)) return false;
+      if (!withinTime(genome.interval, el.timeMode.value, Number(el.timeCursor.value), Number(el.timeWindow.value))) return false;
       if (mappedOnly && !isMapped(genome)) return false;
       if (filterColumn && filterValue && cleanValue(genome.row[filterColumn]) !== filterValue) return false;
       if (!query) return true;
       return [genome.label, genome.location, genome.colorValue, genome.dateValue, ...Object.values(genome.row)].some((value) => cleanValue(value).toLowerCase().includes(query));
     });
     updateStats();
+    el.selectionSummary.textContent = selectionSummary(state.filtered) + ` Showing ${state.filtered.length} of ${state.genomes.length} loaded samples.` + (el.timeMode.value !== "all" ? ` ${state.genomes.filter((g) => !g.interval).length} samples without usable dates are excluded by time.` : "");
+    el.clearClade.hidden = !state.tips;
+    el.timeLabel.textContent = state.genomes.some((g) => g.interval) ? (el.timeMode.value === "all" ? `${formatDay(state.timeMin)} — ${formatDay(state.timeMax)}` : formatDay(Number(el.timeCursor.value))) : "No usable dates";
+    el.timeCursor.setAttribute("aria-valuetext", el.timeLabel.textContent);
+    el.timeWindowLabel.hidden = el.timeMode.value !== "window";
     drawMap();
     drawTree();
-    if (state.selectedId && !state.filtered.some((genome) => genome.id === state.selectedId)) selectGenome("");
+    if (state.selectedId) selectGenome(state.filtered.some((genome) => genome.id === state.selectedId) ? state.selectedId : "");
   }
 
   function refreshFilterValues() {
@@ -866,19 +1247,22 @@
     el.mapSvg.textContent = "";
     el.globeView.classList.toggle("active", state.mapMode === "globe");
     el.flatView.classList.toggle("active", state.mapMode === "flat");
-    el.usCountiesMap.classList.toggle("active", state.mapMode === "flat" && state.customMapName === "US counties");
+    el.usCountiesMap.classList.toggle("active", state.layers.some((l) => l.name === "US counties" && l.visible));
     const background = svg("rect", { x: 0, y: 0, width: W, height: H, fill: "transparent" });
     el.mapSvg.append(background);
     if (state.mapMode === "globe") drawGlobeShell();
     drawGraticule();
     drawLand();
+    for (const layer of state.layers) {
+      if (layer.visible) drawProjectedLines(layer.rings, "geography-overlay");
+    }
 
     const mapped = state.filtered.filter(isMapped);
     const visible = drawMapPoints(mapped);
     const zoomLabel = `${state.mapZoom.toFixed(1)}×`;
     el.mapTitle.textContent = state.mapMode === "globe"
       ? `${visible} visible / ${mapped.length} mapped samples · ${zoomLabel}`
-      : `${mapped.length} mapped samples${state.customMapName ? ` · ${state.customMapName}` : ""} · ${zoomLabel}`;
+      : `${mapped.length} mapped samples · ${zoomLabel}`;
 
     if (!mapped.length) {
       const text = svg("text", { x: W / 2, y: H / 2, "text-anchor": "middle", class: "map-label" }, "No map-ready coordinates in view");
@@ -938,7 +1322,7 @@
   }
 
   function drawGraticule() {
-    if (state.mapMode === "flat" && state.customRings.length) return;
+    if (state.mapMode === "flat" && state.viewBounds) return;
     if (state.mapMode === "flat") {
       for (let lon = -180; lon <= 180; lon += 30) {
         const a = project(lon, -85);
@@ -965,7 +1349,7 @@
       drawFallbackGlobeLand();
       return;
     }
-    if ((state.mapMode === "flat" && state.customRings.length) || state.worldMapLoaded) {
+    if (state.worldMapLoaded) {
       drawGeoJsonLand();
       return;
     }
@@ -989,13 +1373,13 @@
 
   function drawGeoJsonLand() {
     if (state.mapMode === "flat") {
-      const rings = state.customRings.length ? state.customRings : state.worldRings;
+      const rings = state.worldRings;
       for (const ring of rings) {
         const path = ring.map(([lon, lat]) => {
           const point = project(lon, lat);
           return `${point.x},${point.y}`;
         }).join(" ");
-        if (path) el.mapSvg.append(svg("polygon", { points: path, class: ["land country-fill", state.customRings.length ? "custom-geojson-fill" : ""].join(" ") }));
+        if (path) el.mapSvg.append(svg("polygon", { points: path, class: "land country-fill" }));
       }
       return;
     }
@@ -1019,6 +1403,10 @@
   }
 
   function sanitizeRing(ring) {
+    if (!Array.isArray(ring) || ring.some((p) => !Array.isArray(p) || p.length < 2 ||
+        typeof p[0] !== "number" || typeof p[1] !== "number" || !Number.isFinite(p[0]) || !Number.isFinite(p[1]) || Math.abs(p[0]) > 180 || Math.abs(p[1]) > 90)) {
+      throw Error("Invalid GeoJSON coordinates");
+    }
     return ring
       .filter((point) => Array.isArray(point) && point.length >= 2)
       .map((point) => [Number(point[0]), Number(point[1])])
@@ -1060,7 +1448,7 @@
     return { minLon, minLat, maxLon, maxLat };
   }
 
-  function fitFlatBounds(bounds) {
+  function fitFlatBounds() {
     state.mapZoom = 1;
     state.flatPanX = 0;
     state.flatPanY = 0;
@@ -1083,8 +1471,8 @@
   }
 
   function flatBounds() {
-    return state.customRings.length && state.customBounds
-      ? state.customBounds
+    return state.viewBounds
+      ? state.viewBounds
       : { minLon: -180, minLat: -90, maxLon: 180, maxLat: 90 };
   }
 
@@ -1114,15 +1502,18 @@
     const leaves = flattenTips(state.treeRoot);
     const visibleByTip = new Map(state.filtered.map((genome) => [genome.tipName, genome]));
     const genomeByTip = new Map(state.genomes.filter((genome) => genome.inTree).map((genome) => [genome.tipName, genome]));
-    const cladeByNode = new Map();
+    const cladeByNode = new Map(), countByNode = new Map(), visibleByNode = new Map();
     function resolveBranchClade(node) {
       if (!node.children.length) {
+        countByNode.set(node, 1); visibleByNode.set(node, visibleByTip.has(node.name));
         const value = genomeByTip.get(node.name)?.colorValue || "";
         const clade = state.columnMap.color === TREE_CLADE_COLOR && value !== TREE_CLADE_UNMATCHED ? value : "";
         cladeByNode.set(node, clade);
         return clade;
       }
       const childClades = node.children.map(resolveBranchClade);
+      countByNode.set(node, node.children.reduce((sum, child) => sum + countByNode.get(child), 0));
+      visibleByNode.set(node, node.children.some((child) => visibleByNode.get(child)));
       const clade = childClades.length && childClades[0] && childClades.every((value) => value === childClades[0])
         ? childClades[0]
         : "";
@@ -1153,6 +1544,14 @@
         const edge = svg("path", { d: `M ${node.x} ${child.y} L ${child.x} ${child.y} M ${node.x} ${node.y} L ${node.x} ${child.y}`, class: "tree-edge" });
         const clade = cladeByNode.get(child);
         if (clade) edge.style.stroke = colorFor(clade);
+        const count = countByNode.get(child);
+        edge.setAttribute("tabindex", "0"); edge.setAttribute("role", "button");
+        edge.setAttribute("aria-label", `Select branch with ${count} samples`);
+        edge.append(svg("title", {}, `Select ${count} descendant samples`));
+        const choose = () => { state.tips = new Set(flattenTips(child).map((tip) => tip.name)); applyFilters(); focusGenomes(state.filtered); };
+        edge.addEventListener("click", choose);
+        edge.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); choose(); } });
+        if (!visibleByNode.get(child)) edge.classList.add("tree-filtered");
         el.treeSvg.append(edge);
       }
     }
@@ -1171,7 +1570,10 @@
         y: leaf.y + 3,
         class: ["tree-label", mapped ? "mapped" : "", genome && genome.id === state.selectedId ? "selected" : ""].join(" ")
       }, cleanLabel(leaf.name));
+      if (!visibleByTip.has(leaf.name)) { dot.classList.add("tree-filtered"); label.classList.add("tree-filtered"); }
       if (genome) {
+        label.setAttribute("tabindex", "0"); label.setAttribute("role", "button");
+        label.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectGenome(genome.id); } });
         dot.addEventListener("click", () => selectGenome(genome.id));
         label.addEventListener("click", () => selectGenome(genome.id));
       }
@@ -1189,6 +1591,9 @@
       drawTree();
       return;
     }
+    el.sampleNote.value = state.notes.get(genome.id) || "";
+    el.selectionVisibility.textContent = state.filtered.includes(genome) ? "" : "This sample is outside the current filters/time window.";
+    el.focusSample.disabled = !isMapped(genome);
     el.detailSource.textContent = genome.metadataOnly
       ? "METADATA ONLY"
       : `${state.datasetLabel} sample`.toUpperCase();
@@ -1198,7 +1603,7 @@
       ["Tree", genome.inTree ? "present" : "not present"],
       ["Coordinates", isMapped(genome) ? `${genome.latitude.toFixed(5)}, ${genome.longitude.toFixed(5)}` : "not mapped"],
       ["Precision", genome.isCentroid ? "country centroid" : (genome.coordinateSource || "unknown")],
-      ["Date", genome.dateValue || "unknown"],
+      ["Date", genome.interval ? `${formatDay(genome.interval.start)} — ${formatDay(genome.interval.end)}` : (genome.dateValue ? `${genome.dateValue} (not usable for timeline)` : "unknown")],
       ["Color", genome.colorValue || "unassigned"]
     ];
     if (state.datasetKind === "parsnp" || state.ggrIds.size) {
@@ -1253,6 +1658,7 @@
       tree_tips: state.treeTips.map((tip) => tip.name),
       ggr_ids: Array.from(state.ggrIds),
       columns: state.columnMap,
+      review_notes: Object.fromEntries(state.notes),
       genomes: state.genomes
     };
     download("myoga-session.json", JSON.stringify(payload, null, 2), "application/json");

@@ -739,3 +739,31 @@ input[type="search"] {
     grid-template-columns: 1fr;
   }
 }
+
+/* Review controls share the existing panel layout. */
+input[type="text"], input[type="number"], textarea {
+  width: 100%; margin-top: 6px; padding: 7px; border: 1px solid var(--line);
+  background: #070b0a; color: var(--text); font: 12px system-ui, sans-serif;
+}
+textarea { resize: vertical; }
+input[type="range"] { width: 100%; accent-color: var(--green); }
+.controls-panel output { display: block; margin-top: 6px; color: var(--text); }
+.controls-panel section > button, .controls-panel details > button { margin-top: 8px; padding: 7px; }
+.controls-panel .button-row { margin-top: 10px; }
+.controls-panel .status-text { margin: 8px 0; text-transform: none; }
+button:disabled { opacity: .45; cursor: default; }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.tree-edge { cursor: pointer; stroke-width: 3; }
+.tree-edge:focus, .tree-edge:hover { stroke: var(--amber) !important; }
+.tree-filtered { opacity: .18; }
+.geography-overlay { fill: none; stroke: var(--amber); stroke-width: 1; pointer-events: none; }
+#layerList > div { display: flex; align-items: center; gap: 6px; }
+#layerList label { flex: 1; overflow-wrap: anywhere; text-transform: none; }
+#layerList button { padding: 4px; }
+[hidden] { display: none !important; }
+@media (min-width: 981px) {
+  .topbar { grid-template-columns: minmax(100px, 1fr) repeat(5, minmax(80px, 150px)) auto auto; }
+  .brand span { display: none; }
+}
+
+.controls-panel summary { color: var(--green); font: 11px ui-monospace, monospace; cursor: pointer; }

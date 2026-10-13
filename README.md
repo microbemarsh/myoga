@@ -139,6 +139,64 @@ Longer documentation is available in the project wiki.
 
 ---
 
+## Review samples through time
+
+The main map/tree viewer includes a **Collection time** slider and Play/Pause.
+Choose **History through cursor** to retain earlier observations, or **Window
+ending at cursor** for a rolling window in days. Playback advances across the
+loaded date range in roughly 30 seconds (short ranges advance one day per step).
+Filters and branch selections combine with time: the map shows matching samples,
+while excluded tree tips and branches dim without changing the tree topology.
+**All dates** restores undated samples; **All samples** clears search, metadata,
+clade, and time filters and resets the map.
+
+Dates use UTC calendar intervals: `2024`, `2024-06`, and `2024-06-17` represent a
+year, month, and day respectively. Year ranges, slash ranges, and `..` ranges are
+supported. Standardized collection-date bounds, validity, and precision are
+respected for recognized collection-date columns. An explicitly selected custom
+date column uses its own values. Intervals are included when they overlap the
+window; no midpoint is treated as an exact event. Missing or invalid dates stay
+visible in All dates and are counted when excluded by time. Playback describes
+collection history, not inferred transmission, movement, or incidence.
+
+- **Select and focus:** click a tree branch (or focus it with the keyboard and
+  press Enter) to select descendants. Search and metadata filters can also define
+  a group. **Focus selection** frames the matching mapped samples; **Focus this
+  sample** frames the sample open in the details panel. **Clear clade selection**
+  preserves other filters. Dateline-spanning selections use the globe.
+- **Selection summary:** counts samples, distinct recorded coordinate pairs,
+  country-centroid placements, missing dates, unmapped samples, and unmatched
+  metadata, with the collection-date interval covered by the selected samples.
+  Coordinate pairs describe recorded locations, not independent sampling sites.
+- **Geography overlays:** load local Polygon/MultiPolygon GeoJSON files and toggle
+  or remove each outline independently. US Counties is also an optional overlay.
+  The offline basemap remains beneath them. Files are limited to 32 MiB each and
+  20 layers. Geography does not imply an association with samples.
+- **Named views:** save a name for the current filters, time cursor/window, colors,
+  clade selection, tree rooting, selected sample, map position, and visible geography. Open the
+  Named views section to restore or delete a view; names must be unique.
+- **Sample notes:** write a note in the selected sample's details. Notes and views
+  stay in browser memory; **Export review file** saves them and the loaded
+  geography as JSON. After reopening the same tree and metadata, **Load review
+  file** restores the review library; choose a view and Restore to apply it.
+
+Review imports are bound to a SHA-256 fingerprint of the original tree text and
+parsed metadata, validate their contents, and reject conflicting notes, view
+names, or layer geometry instead of overwriting current work. They support up to
+100 views and 64 MiB per review file. Reviews for datasets switched within the
+same tab remain in memory until the tab closes. Export each dataset's review to
+keep it. Review files contain sample identifiers, notes, filter values, and
+geography; they are not anonymized. No external service or browser storage is
+used. The existing **Session JSON** export also includes sample notes but does
+not replace the reloadable review file.
+
+Run the dependency-free review checks with `node scripts/review-check.cjs`.
+Optional browser checks use the same temporary Playwright installation described
+below: `NODE_PATH=/tmp/myoga-browser-check/node_modules node scripts/review-check.cjs /path/to/myoga`
+(set `MYOGA_BROWSER` when Chrome is installed elsewhere).
+
+---
+
 ## Space-time genomic visualization
 
 Collection time becomes a real third spatial dimension: longitude and latitude
